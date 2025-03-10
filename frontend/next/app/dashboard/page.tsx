@@ -5,28 +5,28 @@ import { BookOpen, Calendar, CheckCircle, Users, Clock, AlertCircle } from "luci
 export default function DashboardPage() {
   // This would be fetched from your database in a real application
   const studentData = {
-    name: "John Smith",
-    id: "2023A7PS0414G",
+    name: "Nathan Sequiera",
+    id: "2023A7PS1234G",
     branch: "Computer Science",
-    graduatingYear: 2025,
-    registeredCredits: 18,
+    graduatingYear: 2027,
+    registeredCredits: 21,
     maxCredits: 25,
   }
 
   const upcomingClasses = [
     {
-      id: "CS101",
-      name: "Introduction to Programming",
-      time: "10:00 AM - 11:30 AM",
-      location: "LT-1",
-      instructor: "Dr. Rajeev Kumar",
+      id: "CS F211",
+      name: "Datastructures and Algorithms",
+      time: "9:00 AM - 10:50 AM",
+      location: "LT-2",
+      instructor: "Dr. Sujith Thomas",
     },
     {
-      id: "CS201",
-      name: "Data Structures and Algorithms",
-      time: "1:00 PM - 2:30 PM",
-      location: "LT-3",
-      instructor: "Dr. Sanjay Gupta",
+      id: "CS F241",
+      name: "Microprocessors and Interfacing",
+      time: "11:00 AM - 12:50 PM",
+      location: "LT-1",
+      instructor: "Dr. Gargi",
     },
   ]
 
@@ -34,13 +34,13 @@ export default function DashboardPage() {
     {
       id: 1,
       title: "New Course Added: Machine Learning Fundamentals",
-      date: "Mar 8, 2025",
+      date: "Mar 4, 2025",
       priority: "info",
     },
     {
       id: 2,
-      title: "Course Registration Deadline Extended",
-      date: "Mar 5, 2025",
+      title: "Course Drop Deadline Extended",
+      date: "Mar 15, 2025",
       priority: "warning",
     },
   ]

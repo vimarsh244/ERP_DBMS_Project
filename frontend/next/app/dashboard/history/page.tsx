@@ -8,63 +8,51 @@ export default function CourseHistoryPage() {
   // This would be fetched from your database in a real application
   const courseHistory = [
     {
-      id: "CS101",
-      name: "Introduction to Programming",
-      semester: "Fall 2023",
-      credits: 4,
-      grade: "A",
-      instructor: "Dr. Rajeev Kumar",
-    },
-    {
-      id: "MATH101",
-      name: "Calculus I",
-      semester: "Fall 2023",
+      id: "CS F241",
+      name: "Microprocessors and Interfacing",
+      semester: "Spring 2025",
       credits: 4,
       grade: "A-",
-      instructor: "Dr. Ramesh Iyer",
+      instructor: "Dr. Gargi Prabhu",
     },
     {
-      id: "PHY101",
-      name: "Physics for Engineers",
-      semester: "Fall 2023",
-      credits: 4,
-      grade: "B+",
-      instructor: "Dr. Amit Verma",
-    },
-    {
-      id: "CS201",
+      id: "CS F211",
       name: "Data Structures and Algorithms",
-      semester: "Spring 2024",
+      semester: "Spring 2025",
       credits: 4,
-      grade: "In Progress",
-      instructor: "Dr. Sanjay Gupta",
+      grade: "B",
+      instructor: "Dr. Sujith Thomas",
     },
     {
-      id: "MATH201",
-      name: "Calculus II",
-      semester: "Spring 2024",
+      id: "CS F215",
+      name: "Digital Design",
+      semester: "Fall 2024",
       credits: 4,
-      grade: "In Progress",
-      instructor: "Dr. Priya Sharma",
+      grade: "B",
+      instructor: "Dr. Harikrishnan",
     },
+    {
+      id: "CS F212",
+      name: "Database Management Systems",
+      semester: "Fall 2024",
+      credits: 4,
+      grade: "A",
+      instructor: "Dr. Shubhangi & Dr. Neena",
+    }
   ]
 
   // Calculate GPA
   const getGradePoints = (grade) => {
     const gradeMap = {
-      "A+": 4.0,
-      A: 4.0,
-      "A-": 3.7,
-      "B+": 3.3,
-      B: 3.0,
-      "B-": 2.7,
-      "C+": 2.3,
-      C: 2.0,
-      "C-": 1.7,
-      "D+": 1.3,
-      D: 1.0,
-      "D-": 0.7,
-      F: 0.0,
+      A: 10,
+      "A-": 9,
+      B: 8,
+      "B-": 7,
+      C: 6,
+      "C-": 5,
+      D: 4,
+      E: 2,
+      F: 0,
     }
     return gradeMap[grade] || 0
   }

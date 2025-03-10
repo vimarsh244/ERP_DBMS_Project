@@ -114,7 +114,7 @@ export default function LoginPage() {
               <Input
                 id="email"
                 name="email"
-                placeholder="your.email@example.com"
+                placeholder="id@goa.bits-pilani.ac.in"
                 required
                 type="email"
                 value={formData.email}
