@@ -1,5 +1,7 @@
-import { neon } from "@neondatabase/serverless"
+import { neon, Pool } from "@neondatabase/serverless"
 import { drizzle } from "drizzle-orm/neon-http"
+import dotenv from 'dotenv';
+dotenv.config();
 // import './../envConfig.ts'
 // import {dotenv} from "dotenv"
 
@@ -7,24 +9,29 @@ import { drizzle } from "drizzle-orm/neon-http"
 // console.log("NEON_DATABASE_URL:", process.env.NEON_DATABASE_URL)
 
 // Check if the NEON_DATABASE_URL environment variable is set
-if (!process.env.NEON_DATABASE_URL) {
-  throw new Error("NEON_DATABASE_URL environment variable is not set")
-}
+// if (!process.env.NEON_DATABASE_URL) {
+  // throw new Error("NEON_DATABASE_URL environment variable is not set")
+// }
 
 // Create a SQL client with the connection string
-const sql_client = neon(process.env.NEON_DATABASE_URL)
+// const sql_client = neon({ connectionString: process.env.DATABASE_URL});
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 // Create a drizzle client with the SQL client
-export const db = drizzle(sql_client)
+export const db = drizzle(pool)
 
 
 
 // Helper function to execute raw SQL queries
 export async function executeQuery(query: string, params: any[] = []) {
   try {
-    
-    const response = await sql_client.query(query, params);
-    return response.rows[0].version;
+    console.log("Database query:", query, params)
+    // const response = await sql_client`${query+params}`
+    const response = await pool.query(query, params)
+    console.log("Database query response:", response)
+    return response;
+    // return response
   } catch (error) {
     console.error("Database query error:", error)
     throw error
