@@ -16,12 +16,12 @@ import { BookOpen, Check, GraduationCap, Mail, User } from "lucide-react"
 export default function ProfilePage() {
   // This would be fetched from your database in a real application
   const studentData = {
-    name: "Nathan Sequiera",
-    id: "2023A7PS123G",
-    email: "shakeera@nathan.com",
+    name: "John Smith",
+    id: "2023A7PS0414G",
+    email: "john.smith@example.com",
     phone: "+91 98765 43210",
     branch: "Computer Science",
-    graduatingYear: 2027,
+    graduatingYear: 2025,
     enrollmentDate: "August 2023",
     credits: {
       completed: 32,

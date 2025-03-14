@@ -1,221 +1,113 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, ChevronLeft, ChevronRight, Download } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { getEnrollmentsForStudent, getCourseOfferingById } from "@/lib/course-service"
+
+interface CourseSchedule {
+  id: string
+  course_id: string
+  course_name: string
+  day_of_week: string
+  start_time: string
+  end_time: string
+  location: string
+  professor_name: string
+  color: string
+}
 
 export default function TimetablePage() {
-  const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-  const timeSlots = [
-    "8:00 AM",
-    "9:00 AM",
-    "10:00 AM",
-    "11:00 AM",
-    "12:00 PM",
-    "1:00 PM",
-    "2:00 PM",
-    "3:00 PM",
-    "4:00 PM",
-    "5:00 PM",
-  ]
+  const { data: session } = useSession()
+  const { toast } = useToast()
 
-  // This would be fetched from your database in a real application
-  const classSchedule = [
-    {
-      id: "AMP Lec",
-      name: "AMP Lecture",
-      day: "Monday",
-      startTime: "9:00 AM",
-      endTime: "9:50 AM",
-      location: "C-308",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "DBS Lab",
-      name: "DBS Lab",
-      day: "Monday",
-      startTime: "2:00 PM",
-      endTime: "3:50 PM",
-      location: "CC Lab",
-      color: "bg-red-100 text-red-800",
-    },
-    {
-      id: "NPP Lec",
-      name: "NPP Lecture",
-      day: "Monday",
-      startTime: "4:00 PM",
-      endTime: "4:50 PM",
-      location: "C-308",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "MuP Lec",
-      name: "MuP Lecture",
-      day: "Monday",
-      startTime: "5:00 PM",
-      endTime: "5:50 PM",
-      location: "C-308",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "AMP Tut",
-      name: "AMP Tutorial",
-      day: "Tuesday",
-      startTime: "8:00 AM",
-      endTime: "8:50 AM",
-      location: "C-308",
-      color: "bg-blue-100 text-blue-800",
-    },
-    {
-      id: "SSP Lec",
-      name: "SSP Lecture",
-      day: "Tuesday",
-      startTime: "10:00 AM",
-      endTime: "10:50 AM",
-      location: "C-308",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "DBS Lec",
-      name: "DBS Lecture",
-      day: "Tuesday",
-      startTime: "11:00 AM",
-      endTime: "11:50 AM",
-      location: "LT-1",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "MuP Lec",
-      name: "MuP Lecture",
-      day: "Tuesday",
-      startTime: "12:00 PM",
-      endTime: "12:50 PM",
-      location: "LT-1",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "DBS Lec",
-      name: "DBS Lecture",
-      day: "Wednesday",
-      startTime: "8:00 AM",
-      endTime: "8:50 AM",
-      location: "LT-1",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "AMP Lec",
-      name: "AMP Lecture",
-      day: "Wednesday",
-      startTime: "9:00 AM",
-      endTime: "9:50 AM",
-      location: "C-308",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "SSP Lec",
-      name: "SSP Lecture",
-      day: "Wednesday",
-      startTime: "10:00 AM",
-      endTime: "10:50 AM",
-      location: "C-308",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "DBS Lec",
-      name: "DBS Lecture",
-      day: "Wednesday",
-      startTime: "11:00 AM",
-      endTime: "11:50 AM",
-      location: "LT-1",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "MuP Lec",
-      name: "MuP Lecture",
-      day: "Wednesday",
-      startTime: "12:00 PM",
-      endTime: "12:50 PM",
-      location: "LT-1",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "SSP Tut",
-      name: "SSP Tutorial",
-      day: "Thursday",
-      startTime: "8:00 AM",
-      endTime: "8:50 AM",
-      location: "C-308",
-      color: "bg-blue-100 text-blue-800",
-    },
-    {
-      id: "DSA Lec",
-      name: "DSA Lecture",
-      day: "Thursday",
-      startTime: "5:00 PM",
-      endTime: "5:50 PM",
-      location: "LT-1",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "MuP Tut",
-      name: "MuP Tutorial",
-      day: "Friday",
-      startTime: "8:00 AM",
-      endTime: "8:50 AM",
-      location: "Room 110",
-      color: "bg-blue-100 text-blue-800",
-    },
-    {
-      id: "AMP Lec",
-      name: "AMP Lecture",
-      day: "Friday",
-      startTime: "9:00 AM",
-      endTime: "9:50 AM",
-      location: "Room 101",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "MuP Lab",
-      name: "MuP Lab",
-      day: "Friday",
-      startTime: "2:00 PM",
-      endTime: "3:50 PM",
-      location: "CC Lab",
-      color: "bg-red-100 text-red-800",
-    },
-    {
-      id: "NPP Lec",
-      name: "NPP Lecture",
-      day: "Friday",
-      startTime: "4:00 PM",
-      endTime: "4:50 PM",
-      location: "C-308",
-      color: "bg-purple-100 text-purple-800",
-    },
-    {
-      id: "DSA Lec",
-      name: "DSA Lecture",
-      day: "Friday",
-      startTime: "5:00 PM",
-      endTime: "5:50 PM",
-      location: "LT-2",
-      color: "bg-purple-100 text-purple-800",
-    },
-  ]
+  const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+  const timeSlots = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"]
 
   const [viewMode, setViewMode] = useState("week") // "week" or "list"
+  const [loading, setLoading] = useState(true)
+  const [schedules, setSchedules] = useState<CourseSchedule[]>([])
+
+  useEffect(() => {
+    if (!session?.user.id) return
+
+    fetchTimetable()
+  }, [session])
+
+  const fetchTimetable = async () => {
+    if (!session?.user.id) return
+
+    try {
+      setLoading(true)
+
+      // Get all enrollments
+      const enrollments = await getEnrollmentsForStudent(session.user.id)
+
+      // Get course details and schedules for each enrollment
+      const courseSchedules: CourseSchedule[] = []
+      const colors = [
+        "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
+        "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
+        "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
+        "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
+        "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300",
+        "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300",
+      ]
+
+      for (let i = 0; i < enrollments.length; i++) {
+        const enrollment = enrollments[i]
+        const courseOffering = await getCourseOfferingById(enrollment.course_offering_id)
+
+        if (courseOffering && courseOffering.schedules) {
+          const color = colors[i % colors.length]
+
+          for (const schedule of courseOffering.schedules) {
+            courseSchedules.push({
+              id: schedule.id,
+              course_id: courseOffering.course_id,
+              course_name: courseOffering.course_name || courseOffering.course_id,
+              day_of_week: schedule.day_of_week,
+              start_time: schedule.start_time,
+              end_time: schedule.end_time,
+              location: courseOffering.location || "TBA",
+              professor_name: courseOffering.professor_name || "TBA",
+              color,
+            })
+          }
+        }
+      }
+
+      setSchedules(courseSchedules)
+    } catch (error) {
+      console.error("Error fetching timetable:", error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch timetable",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // Function to get the class events for a specific day and time slot
-  const getClassForTimeSlot = (day, timeSlot) => {
-    return classSchedule.filter((cls) => {
-      const startTimeIndex = timeSlots.indexOf(cls.startTime)
+  const getClassForTimeSlot = (day: string, timeSlot: string) => {
+    return schedules.filter((cls) => {
+      const startTime = cls.start_time.substring(0, 5)
+      const endTime = cls.end_time.substring(0, 5)
+
+      const startTimeIndex = timeSlots.indexOf(startTime)
       const endTimeIndex =
-        timeSlots.indexOf(cls.endTime) === -1 ? timeSlots.indexOf(timeSlot) + 1 : timeSlots.indexOf(cls.endTime)
+        timeSlots.indexOf(endTime) === -1 ? timeSlots.indexOf(timeSlot) + 1 : timeSlots.indexOf(endTime)
 
       return (
-        cls.day === day && timeSlots.indexOf(timeSlot) >= startTimeIndex && timeSlots.indexOf(timeSlot) < endTimeIndex
+        cls.day_of_week === day &&
+        timeSlots.indexOf(timeSlot) >= startTimeIndex &&
+        timeSlots.indexOf(timeSlot) < endTimeIndex
       )
     })
   }
@@ -242,10 +134,12 @@ export default function TimetablePage() {
                 <div key={`${day}-${timeSlot}`} className="min-h-[60px] border-t p-1">
                   {classes.map((cls, index) => {
                     // Only render the class card on the first time slot it appears
-                    if (cls.startTime === timeSlot) {
-                      const startIndex = timeSlots.indexOf(cls.startTime)
+                    if (cls.start_time.substring(0, 5) === timeSlot) {
+                      const startIndex = timeSlots.indexOf(cls.start_time.substring(0, 5))
                       const endIndex =
-                        timeSlots.indexOf(cls.endTime) === -1 ? startIndex + 1 : timeSlots.indexOf(cls.endTime)
+                        timeSlots.indexOf(cls.end_time.substring(0, 5)) === -1
+                          ? startIndex + 1
+                          : timeSlots.indexOf(cls.end_time.substring(0, 5))
                       const duration = endIndex - startIndex
 
                       return (
@@ -258,10 +152,10 @@ export default function TimetablePage() {
                           }}
                         >
                           <div className="font-medium">
-                            {cls.name} ({cls.id})
+                            {cls.course_name} ({cls.course_id})
                           </div>
                           <div>
-                            {cls.startTime} - {cls.endTime}
+                            {cls.start_time.substring(0, 5)} - {cls.end_time.substring(0, 5)}
                           </div>
                           <div>{cls.location}</div>
                         </div>
@@ -280,36 +174,50 @@ export default function TimetablePage() {
 
   const ListView = () => (
     <div className="grid gap-4">
-      {days.map((day) => (
-        <div key={day}>
-          <h3 className="mb-2 text-lg font-medium">{day}</h3>
-          <div className="rounded-lg border">
-            {classSchedule
-              .filter((cls) => cls.day === day)
-              .sort((a, b) => timeSlots.indexOf(a.startTime) - timeSlots.indexOf(b.startTime))
-              .map((cls, index) => (
-                <div key={index} className="flex items-center justify-between border-b p-4 last:border-0">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
-                      <Calendar className="h-6 w-6 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium">{cls.name}</h4>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <span>
-                          {cls.startTime} - {cls.endTime}
-                        </span>
-                        <span>•</span>
-                        <span>{cls.location}</span>
+      {days.map((day) => {
+        const daySchedules = schedules.filter((s) => s.day_of_week === day)
+
+        if (daySchedules.length === 0) {
+          return (
+            <div key={day}>
+              <h3 className="mb-2 text-lg font-medium">{day}</h3>
+              <div className="rounded-lg border p-4 text-center text-muted-foreground">No classes scheduled</div>
+            </div>
+          )
+        }
+
+        return (
+          <div key={day}>
+            <h3 className="mb-2 text-lg font-medium">{day}</h3>
+            <div className="rounded-lg border">
+              {daySchedules
+                .sort((a, b) => a.start_time.localeCompare(b.start_time))
+                .map((cls, index) => (
+                  <div key={index} className="flex items-center justify-between border-b p-4 last:border-0">
+                    <div className="flex items-center gap-4">
+                      <div
+                        className={`flex h-12 w-12 items-center justify-center rounded-lg ${cls.color.split(" ")[0]}`}
+                      >
+                        <Calendar className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <h4 className="font-medium">{cls.course_name}</h4>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span>
+                            {cls.start_time.substring(0, 5)} - {cls.end_time.substring(0, 5)}
+                          </span>
+                          <span>•</span>
+                          <span>{cls.location}</span>
+                        </div>
                       </div>
                     </div>
+                    <Badge className={cls.color}>{cls.course_id}</Badge>
                   </div>
-                  <Badge className={cls.color}>{cls.id}</Badge>
-                </div>
-              ))}
+                ))}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 
@@ -338,6 +246,7 @@ export default function TimetablePage() {
           </Button>
         </div>
       </div>
+
       <Card>
         <CardHeader className="flex flex-row items-center pb-2">
           <div className="flex-1">
@@ -353,7 +262,19 @@ export default function TimetablePage() {
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="p-4">{viewMode === "week" ? <WeekView /> : <ListView />}</CardContent>
+        <CardContent className="p-4">
+          {loading ? (
+            <div className="flex justify-center p-4">Loading timetable...</div>
+          ) : schedules.length === 0 ? (
+            <div className="flex justify-center p-4 text-muted-foreground">
+              No classes scheduled. Please register for courses to see your timetable.
+            </div>
+          ) : viewMode === "week" ? (
+            <WeekView />
+          ) : (
+            <ListView />
+          )}
+        </CardContent>
       </Card>
     </div>
   )

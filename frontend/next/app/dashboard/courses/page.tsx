@@ -1,149 +1,176 @@
 "use client"
 
-import { useState } from "react"
-import Link from "next/link"
+import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, Filter, Search } from "lucide-react"
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
-import { registerForCourse, dropCourse } from "@/lib/course-service"
+import {
+  type CourseOffering,
+  getAllCourseOfferings,
+  enrollStudent,
+  dropEnrollment,
+  checkPrerequisites,
+  checkTimeConflicts,
+  checkCreditLimit,
+} from "@/lib/course-service"
+import { getEnrollmentsForStudent } from "@/lib/course-service"
 
-export default function CoursesPage() {
+export default function StudentCoursesPage() {
+  const { data: session } = useSession()
+  const router = useRouter()
   const { toast } = useToast()
+
+  const [courses, setCourses] = useState<CourseOffering[]>([])
+  const [filteredCourses, setFilteredCourses] = useState<CourseOffering[]>([])
+  const [enrolledCourses, setEnrolledCourses] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
-  // This would be fetched from your database in a real application
-  const coursesData = [
-    {
-      id: "CS101",
-      name: "Introduction to Programming",
-      department: "Computer Science",
-      credits: 4,
-      instructor: "Dr. Rajeev Kumar",
-      timing: "Mon, Wed 10:00-11:30",
-      location: "LT-1",
-      prerequisites: [],
-      offeredThisSem: true,
-      registered: false,
-    },
-    {
-      id: "CS201",
-      name: "Data Structures and Algorithms",
-      department: "Computer Science",
-      credits: 4,
-      instructor: "Dr. Sanjay Gupta",
-      timing: "Tue, Thu 13:00-14:30",
-      location: "LT-3",
-      prerequisites: ["CS101"],
-      offeredThisSem: true,
-      registered: true,
-    },
-    {
-      id: "CS301",
-      name: "Database Systems",
-      department: "Computer Science",
-      credits: 3,
-      instructor: "Dr. Priya Sharma",
-      timing: "Mon, Wed 14:00-15:30",
-      location: "LT-2",
-      prerequisites: ["CS201"],
-      offeredThisSem: true,
-      registered: false,
-    },
-    {
-      id: "MATH101",
-      name: "Calculus I",
-      department: "Mathematics",
-      credits: 4,
-      instructor: "Dr. Ramesh Iyer",
-      timing: "Mon, Wed, Fri 09:00-10:00",
-      location: "LT-4",
-      prerequisites: [],
-      offeredThisSem: true,
-      registered: true,
-    },
-    {
-      id: "PHY101",
-      name: "Physics for Engineers",
-      department: "Physics",
-      credits: 4,
-      instructor: "Dr. Amit Verma",
-      timing: "Tue, Thu 15:00-16:30",
-      location: "LT-5",
-      prerequisites: [],
-      offeredThisSem: true,
-      registered: false,
-    },
-    {
-      id: "EE201",
-      name: "Digital Electronics",
-      department: "Electrical Engineering",
-      credits: 3,
-      instructor: "Dr. Neha Gupta",
-      timing: "Wed, Fri 11:00-12:30",
-      location: "LT-6",
-      prerequisites: ["PHY101"],
-      offeredThisSem: true,
-      registered: false,
-    },
-  ]
+  useEffect(() => {
+    if (!session) return
 
-  const [searchQuery, setSearchQuery] = useState("")
-  const [filterDepartment, setFilterDepartment] = useState<string[]>([])
-  const [showRegistered, setShowRegistered] = useState<boolean | null>(null)
+    fetchCourses()
+    fetchEnrollments()
+  }, [session])
 
-  const uniqueDepartments = Array.from(new Set(coursesData.map((course) => course.department)))
+  useEffect(() => {
+    if (courses.length > 0) {
+      filterCourses()
+    }
+  }, [searchQuery, courses, enrolledCourses])
 
-  const filteredCourses = coursesData.filter((course) => {
-    const matchesSearch =
-      course.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      course.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      course.instructor.toLowerCase().includes(searchQuery.toLowerCase())
-
-    const matchesDepartment = filterDepartment.length === 0 || filterDepartment.includes(course.department)
-
-    const matchesRegistration = showRegistered === null || course.registered === showRegistered
-
-    return matchesSearch && matchesDepartment && matchesRegistration
-  })
-
-  const totalCredits = coursesData
-    .filter((course) => course.registered)
-    .reduce((sum, course) => sum + course.credits, 0)
-
-  const handleRegister = async (courseId: string) => {
-    setActionLoading(courseId)
+  const fetchCourses = async () => {
     try {
-      const result = await registerForCourse(courseId)
-
-      if (result.success) {
-        toast({
-          title: "Success",
-          description: result.message,
-        })
-        // In a real app, you would update the course data here
-      } else {
-        toast({
-          title: "Registration Failed",
-          description: result.message,
-          variant: "destructive",
-        })
-      }
+      setLoading(true)
+      const allCourses = await getAllCourseOfferings()
+      setCourses(allCourses)
+      setFilteredCourses(allCourses)
     } catch (error) {
+      console.error("Error fetching courses:", error)
       toast({
         title: "Error",
-        description: "An unexpected error occurred. Please try again.",
+        description: "Failed to fetch courses",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchEnrollments = async () => {
+    if (!session?.user.id) return
+
+    try {
+      const enrollments = await getEnrollmentsForStudent(session.user.id)
+      const enrolledIds = enrollments.map((e) => e.course_offering_id)
+      setEnrolledCourses(enrolledIds)
+    } catch (error) {
+      console.error("Error fetching enrollments:", error)
+    }
+  }
+
+  const filterCourses = () => {
+    if (!searchQuery.trim()) {
+      setFilteredCourses(courses)
+      return
+    }
+
+    const query = searchQuery.toLowerCase()
+    const filtered = courses.filter(
+      (course) =>
+        course.course_id.toLowerCase().includes(query) ||
+        course.course_name?.toLowerCase().includes(query) ||
+        course.department?.toLowerCase().includes(query) ||
+        course.semester.toLowerCase().includes(query) ||
+        course.year.toString().includes(query),
+    )
+
+    setFilteredCourses(filtered)
+  }
+
+  const formatSchedule = (offering: CourseOffering) => {
+    if (!offering.schedules || offering.schedules.length === 0) {
+      return "No schedule"
+    }
+
+    return offering.schedules
+      .map(
+        (schedule) =>
+          `${schedule.day_of_week} ${schedule.start_time.substring(0, 5)}-${schedule.end_time.substring(0, 5)}`,
+      )
+      .join(", ")
+  }
+
+  const handleEnroll = async (courseId: string) => {
+    if (!session?.user.id) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to enroll in courses",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setActionLoading(courseId)
+
+    try {
+      // Check prerequisites
+      const prerequisites = await checkPrerequisites(session.user.id, courseId)
+
+      if (!prerequisites.met) {
+        toast({
+          title: "Prerequisites Not Met",
+          description: `You need to complete: ${prerequisites.missing.map((p) => p.name).join(", ")}`,
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Check time conflicts
+      const timeConflicts = await checkTimeConflicts(session.user.id, courseId)
+
+      if (timeConflicts.hasConflicts) {
+        toast({
+          title: "Time Conflict",
+          description: `Conflicts with: ${timeConflicts.conflictingCourses.map((c) => `${c.name} (${c.day} ${c.time})`).join(", ")}`,
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Check credit limit
+      const creditLimit = await checkCreditLimit(session.user.id, courseId)
+
+      if (!creditLimit.allowed) {
+        toast({
+          title: "Credit Limit Exceeded",
+          description: `Adding this course (${creditLimit.adding} credits) would exceed your limit of ${creditLimit.max} credits. Current: ${creditLimit.current} credits.`,
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Enroll in the course
+      await enrollStudent(session.user.id, courseId)
+
+      toast({
+        title: "Success",
+        description: "Successfully enrolled in the course",
+      })
+
+      // Update enrolled courses
+      setEnrolledCourses([...enrolledCourses, courseId])
+    } catch (error) {
+      console.error("Error enrolling in course:", error)
+      toast({
+        title: "Error",
+        description: "Failed to enroll in the course",
         variant: "destructive",
       })
     } finally {
@@ -152,27 +179,25 @@ export default function CoursesPage() {
   }
 
   const handleDrop = async (courseId: string) => {
-    setActionLoading(courseId)
-    try {
-      const result = await dropCourse(courseId)
+    if (!session?.user.id) return
 
-      if (result.success) {
-        toast({
-          title: "Success",
-          description: result.message,
-        })
-        // In a real app, you would update the course data here
-      } else {
-        toast({
-          title: "Drop Failed",
-          description: result.message,
-          variant: "destructive",
-        })
-      }
+    setActionLoading(courseId)
+
+    try {
+      await dropEnrollment(session.user.id, courseId)
+
+      toast({
+        title: "Success",
+        description: "Successfully dropped the course",
+      })
+
+      // Update enrolled courses
+      setEnrolledCourses(enrolledCourses.filter((id) => id !== courseId))
     } catch (error) {
+      console.error("Error dropping course:", error)
       toast({
         title: "Error",
-        description: "An unexpected error occurred. Please try again.",
+        description: "Failed to drop the course",
         variant: "destructive",
       })
     } finally {
@@ -182,150 +207,107 @@ export default function CoursesPage() {
 
   return (
     <div className="flex flex-col gap-4 p-4 md:gap-8 md:p-8">
-      <div className="flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Course Catalog</h1>
-          <p className="text-sm text-muted-foreground">Browse and register for courses for the upcoming semester</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-md bg-muted p-2">
-            <CheckCircle className="h-5 w-5 text-primary" />
-            <span className="text-sm font-medium">Registered Credits: {totalCredits}/25</span>
-          </div>
+          <h1 className="text-2xl font-bold">Course Registration</h1>
+          <p className="text-sm text-muted-foreground">Browse and register for courses</p>
         </div>
       </div>
-      <div className="flex flex-col gap-4 md:flex-row md:items-center">
-        <div className="flex flex-1 items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-8"
-              placeholder="Search courses..."
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="gap-2">
-                <Filter className="h-4 w-4" />
-                Filters
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Filter by Department</DropdownMenuLabel>
-              {uniqueDepartments.map((department) => (
-                <DropdownMenuCheckboxItem
-                  key={department}
-                  checked={filterDepartment.includes(department)}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setFilterDepartment([...filterDepartment, department])
-                    } else {
-                      setFilterDepartment(filterDepartment.filter((d) => d !== department))
-                    }
-                  }}
-                >
-                  {department}
-                </DropdownMenuCheckboxItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>Registration Status</DropdownMenuLabel>
-              <DropdownMenuCheckboxItem
-                checked={showRegistered === true}
-                onCheckedChange={() => {
-                  setShowRegistered(showRegistered === true ? null : true)
-                }}
-              >
-                Registered
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={showRegistered === false}
-                onCheckedChange={() => {
-                  setShowRegistered(showRegistered === false ? null : false)
-                }}
-              >
-                Not Registered
-              </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+
+      <div className="flex items-center gap-2">
+        <Input
+          placeholder="Search courses..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="max-w-sm"
+        />
       </div>
+
       <Card>
-        <CardHeader className="px-6 py-4">
+        <CardHeader>
           <CardTitle>Available Courses</CardTitle>
-          <CardDescription>
-            Showing {filteredCourses.length} of {coursesData.length} courses
-          </CardDescription>
+          <CardDescription>Courses available for registration</CardDescription>
         </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Course ID</TableHead>
-                <TableHead>Course Name</TableHead>
-                <TableHead>Department</TableHead>
-                <TableHead>Credits</TableHead>
-                <TableHead>Instructor</TableHead>
-                <TableHead>Schedule</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredCourses.map((course) => (
-                <TableRow key={course.id}>
-                  <TableCell className="font-medium">{course.id}</TableCell>
-                  <TableCell>{course.name}</TableCell>
-                  <TableCell>{course.department}</TableCell>
-                  <TableCell>{course.credits}</TableCell>
-                  <TableCell>{course.instructor}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="text-xs">{course.timing}</span>
-                      <span className="text-xs text-muted-foreground">{course.location}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {course.registered ? (
-                      <Badge className="bg-green-100 text-green-800">Registered</Badge>
-                    ) : (
-                      <Badge variant="outline">Not Registered</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Link href={`/dashboard/courses/${course.id}`}>
-                      <Button variant="ghost" size="sm">
-                        View
-                      </Button>
-                    </Link>
-                    {!course.registered ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="ml-2"
-                        onClick={() => handleRegister(course.id)}
-                        disabled={actionLoading === course.id}
-                      >
-                        {actionLoading === course.id ? "Processing..." : "Register"}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="ml-2 text-red-600 hover:text-red-700"
-                        onClick={() => handleDrop(course.id)}
-                        disabled={actionLoading === course.id}
-                      >
-                        {actionLoading === course.id ? "Processing..." : "Drop"}
-                      </Button>
-                    )}
-                  </TableCell>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center p-4">Loading courses...</div>
+          ) : filteredCourses.length === 0 ? (
+            <div className="flex justify-center p-4 text-muted-foreground">No courses found</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Course Code</TableHead>
+                  <TableHead>Course Name</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Credits</TableHead>
+                  <TableHead>Semester</TableHead>
+                  <TableHead>Schedule</TableHead>
+                  <TableHead>Instructor</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredCourses.map((course) => {
+                  const isEnrolled = enrolledCourses.includes(course.id)
+
+                  return (
+                    <TableRow key={course.id}>
+                      <TableCell className="font-medium">{course.course_id}</TableCell>
+                      <TableCell>{course.course_name}</TableCell>
+                      <TableCell>{course.department}</TableCell>
+                      <TableCell>{course.credits}</TableCell>
+                      <TableCell>
+                        {course.semester} {course.year}
+                      </TableCell>
+                      <TableCell>{formatSchedule(course)}</TableCell>
+                      <TableCell>{course.professor_name || "TBA"}</TableCell>
+                      <TableCell>
+                        {isEnrolled ? (
+                          <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
+                            Enrolled
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline">Not Enrolled</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => router.push(`/dashboard/courses/${course.id}`)}
+                        >
+                          View
+                        </Button>
+                        {isEnrolled ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="ml-2 text-red-600 hover:text-red-700"
+                            onClick={() => handleDrop(course.id)}
+                            disabled={actionLoading === course.id}
+                          >
+                            {actionLoading === course.id ? "Processing..." : "Drop"}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="ml-2"
+                            onClick={() => handleEnroll(course.id)}
+                            disabled={actionLoading === course.id}
+                          >
+                            {actionLoading === course.id ? "Processing..." : "Enroll"}
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

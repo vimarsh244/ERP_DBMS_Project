@@ -4,24 +4,28 @@ import type React from "react"
 
 import Link from "next/link"
 import { useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { signIn } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
+import { createUser } from "@/lib/auth"
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard"
   const { toast } = useToast()
 
   const [isLoading, setIsLoading] = useState(false)
   const [formData, setFormData] = useState({
+    name: "",
     email: "",
     password: "",
+    confirmPassword: "",
+    studentId: "",
+    branch: "",
+    graduatingYear: "",
   })
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -33,34 +37,42 @@ export default function LoginPage() {
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    // Validate form
+    if (formData.password !== formData.confirmPassword) {
+      toast({
+        title: "Passwords do not match",
+        description: "Please make sure your passwords match.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsLoading(true)
 
     try {
-      const result = await signIn("credentials", {
-        redirect: false,
+      // Create user
+      await createUser({
+        name: formData.name,
         email: formData.email,
         password: formData.password,
+        role: "student",
+        studentId: formData.studentId || null,
+        branch: formData.branch || null,
+        graduatingYear: formData.graduatingYear ? Number.parseInt(formData.graduatingYear) : null,
       })
 
-      if (result?.error) {
-        toast({
-          title: "Authentication failed",
-          description: "Invalid email or password",
-          variant: "destructive",
-        })
-        return
-      }
-
       toast({
-        title: "Login successful",
-        description: "Welcome back to ERP 2.0!",
+        title: "Registration successful",
+        description: "Your account has been created. Please log in.",
       })
 
-      router.push(callbackUrl)
-    } catch (error) {
+      // Redirect to login
+      router.push("/login")
+    } catch (error: any) {
       toast({
-        title: "Authentication failed",
-        description: "Please check your credentials and try again.",
+        title: "Registration failed",
+        description: error.message || "An error occurred during registration.",
         variant: "destructive",
       })
     } finally {
@@ -72,7 +84,7 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      await signIn("google", { callbackUrl })
+      await signIn("google", { callbackUrl: "/dashboard" })
     } catch (error) {
       toast({
         title: "Authentication failed",
@@ -87,11 +99,22 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold">Login to ERP 2.0</CardTitle>
-          <CardDescription>Enter your email and password to login to your account</CardDescription>
+          <CardTitle className="text-2xl font-bold">Create an Account</CardTitle>
+          <CardDescription>Enter your details to create a new account</CardDescription>
         </CardHeader>
         <form onSubmit={onSubmit}>
           <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Full Name</Label>
+              <Input
+                id="name"
+                name="name"
+                placeholder="John Smith"
+                required
+                value={formData.name}
+                onChange={handleChange}
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -105,12 +128,7 @@ export default function LoginPage() {
               />
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <Link className="text-sm text-primary underline-offset-4 hover:underline" href="/forgot-password">
-                  Forgot password?
-                </Link>
-              </div>
+              <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 name="password"
@@ -120,8 +138,50 @@ export default function LoginPage() {
                 onChange={handleChange}
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <Input
+                id="confirmPassword"
+                name="confirmPassword"
+                required
+                type="password"
+                value={formData.confirmPassword}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="studentId">Student ID (Optional)</Label>
+              <Input
+                id="studentId"
+                name="studentId"
+                placeholder="2023A7PS0414G"
+                value={formData.studentId}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="branch">Branch (Optional)</Label>
+              <Input
+                id="branch"
+                name="branch"
+                placeholder="Computer Science"
+                value={formData.branch}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="graduatingYear">Graduating Year (Optional)</Label>
+              <Input
+                id="graduatingYear"
+                name="graduatingYear"
+                placeholder="2025"
+                type="number"
+                value={formData.graduatingYear}
+                onChange={handleChange}
+              />
+            </div>
             <Button className="w-full gap-2" disabled={isLoading} type="submit">
-              {isLoading ? "Logging in..." : "Login"}
+              {isLoading ? "Creating account..." : "Create Account"}
             </Button>
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -156,15 +216,15 @@ export default function LoginPage() {
                   fill="#34A853"
                 />
               </svg>
-              Sign in with Google
+              Sign up with Google
             </Button>
           </CardContent>
         </form>
         <CardFooter className="flex justify-center">
           <div className="text-sm text-muted-foreground">
-            Don&apos;t have an account?{" "}
-            <Link className="text-primary underline-offset-4 hover:underline" href="/register">
-              Sign up
+            Already have an account?{" "}
+            <Link className="text-primary underline-offset-4 hover:underline" href="/login">
+              Log in
             </Link>
           </div>
         </CardFooter>

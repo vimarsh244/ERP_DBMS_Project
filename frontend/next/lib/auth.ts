@@ -1,33 +1,24 @@
-/**
- * NextAuth Configuration
- *
- * This file contains the configuration for NextAuth.js
- * In a real application, you would:
- * 1. Set up your authentication providers (Google, GitHub, etc.)
- * 2. Configure callbacks for session handling
- * 3. Set up database adapters for storing user data
- *
- * For more information, see: https://next-auth.js.org/
- */
-
 import type { NextAuthOptions } from "next-auth"
-import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
+import GoogleProvider from "next-auth/providers/google"
+import { compare, hash } from "bcrypt"
+import { executeQuery } from "@/lib/db"
 
-/**
- * NextAuth configuration options
- * This is a placeholder configuration for demonstration purposes
- */
 export const authOptions: NextAuthOptions = {
-  // Configure authentication providers
   providers: [
-    // Google OAuth provider
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID || "placeholder-client-id",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "placeholder-client-secret",
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+          role: "student", // Default role for Google sign-ins
+        }
+      },
     }),
-
-    // Credentials provider for email/password login
     CredentialsProvider({
       name: "Credentials",
       credentials: {
@@ -35,88 +26,197 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        // In a real application, you would verify the credentials against your database
-        // For demonstration, we'll accept any credentials
-        if (credentials?.email && credentials?.password) {
-          // Return a mock user
-          return {
-            id: "1",
-            name: "John Smith",
-            email: credentials.email,
-            image: "/placeholder.svg?height=100&width=100",
-          }
+        if (!credentials?.email || !credentials?.password) {
+          return null
         }
-        return null
+
+        try {
+          // Find user by email
+          const result = await executeQuery("SELECT * FROM users WHERE email = $1 LIMIT 1", [credentials.email])
+
+          const user = result.rows[0]
+
+          if (!user || !user.password) {
+            return null
+          }
+
+          // Compare passwords
+          const passwordMatch = await compare(credentials.password, user.password)
+
+          if (!passwordMatch) {
+            return null
+          }
+
+          return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            studentId: user.student_id,
+            branch: user.branch,
+            graduatingYear: user.graduating_year,
+          }
+        } catch (error) {
+          console.error("Auth error:", error)
+          return null
+        }
       },
     }),
   ],
-
-  // Configure session handling
-  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
-
-  // Configure callbacks
   callbacks: {
-    async jwt({ token, user }) {
-      // Add custom claims to the JWT token
+    async jwt({ token, user, account }) {
       if (user) {
+        token.role = user.role
         token.id = user.id
-        token.role = "student" // Example of adding custom data
+        token.studentId = user.studentId
+        token.branch = user.branch
+        token.graduatingYear = user.graduatingYear
       }
+
+      // If it's a Google sign-in, check if the user exists in our database
+      if (account?.provider === "google") {
+        try {
+          const result = await executeQuery("SELECT * FROM users WHERE email = $1 LIMIT 1", [token.email])
+
+          if (result.rows.length === 0) {
+            // User doesn't exist, create a new user
+            const newUser = await executeQuery(
+              "INSERT INTO users (name, email, role) VALUES ($1, $2, $3) RETURNING *",
+              [token.name, token.email, "student"],
+            )
+
+            token.role = "student"
+            token.id = newUser.rows[0].id
+          } else {
+            // User exists, update token with user data
+            const user = result.rows[0]
+            token.role = user.role
+            token.id = user.id
+            token.studentId = user.student_id
+            token.branch = user.branch
+            token.graduatingYear = user.graduating_year
+          }
+        } catch (error) {
+          console.error("Error handling Google sign-in:", error)
+        }
+      }
+
       return token
     },
-
     async session({ session, token }) {
-      // Add custom session data
       if (session.user) {
-        session.user.id = token.id as string
         session.user.role = token.role as string
+        session.user.id = token.id as string
+        session.user.studentId = token.studentId as string
+        session.user.branch = token.branch as string
+        session.user.graduatingYear = token.graduatingYear as number
       }
       return session
     },
   },
-
-  // Configure pages
   pages: {
     signIn: "/login",
-    signOut: "/",
-    error: "/error",
+    error: "/login",
   },
-
-  // Enable debug in development
-  debug: process.env.NODE_ENV === "development",
+  session: {
+    strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  },
+  secret: process.env.NEXTAUTH_SECRET,
 }
 
-/**
- * To use NextAuth in your application:
- *
- * 1. Create an API route at app/api/auth/[...nextauth]/route.ts:
- *
- * import NextAuth from "next-auth"
- * import { authOptions } from "@/lib/auth"
- *
- * const handler = NextAuth(authOptions)
- * export { handler as GET, handler as POST }
- *
- * 2. Wrap your application with SessionProvider in a client component:
- *
- * "use client"
- * import { SessionProvider } from "next-auth/react"
- *
- * export function Providers({ children, session }) {
- *   return <SessionProvider session={session}>{children}</SessionProvider>
- * }
- *
- * 3. Use the useSession hook in your client components:
- *
- * "use client"
- * import { useSession } from "next-auth/react"
- *
- * export default function Profile() {
- *   const { data: session } = useSession()
- *   return <div>Hello, {session?.user?.name}</div>
- * }
- */
+// Helper function to create a new user
+export async function createUser({
+  name,
+  email,
+  password,
+  role = "student",
+  studentId = null,
+  branch = null,
+  graduatingYear = null,
+}: {
+  name: string
+  email: string
+  password: string
+  role?: string
+  studentId?: string | null
+  branch?: string | null
+  graduatingYear?: number | null
+}) {
+  try {
+    // Check if user already exists
+    const existingUser = await executeQuery("SELECT * FROM users WHERE email = $1", [email])
+
+    if (existingUser.rows.length > 0) {
+      throw new Error("User already exists")
+    }
+
+    // Hash password
+    const hashedPassword = await hash(password, 10)
+
+    // Create user
+    const result = await executeQuery(
+      `INSERT INTO users (name, email, password, role, student_id, branch, graduating_year) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7) 
+       RETURNING id, name, email, role, student_id, branch, graduating_year`,
+      [name, email, hashedPassword, role, studentId, branch, graduatingYear],
+    )
+
+    return result.rows[0]
+  } catch (error) {
+    console.error("Error creating user:", error)
+    throw error
+  }
+}
+
+// Helper function to update a user's role
+export async function updateUserRole(userId: string, role: string) {
+  try {
+    const result = await executeQuery(
+      "UPDATE users SET role = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
+      [role, userId],
+    )
+
+    if (result.rows.length === 0) {
+      throw new Error("User not found")
+    }
+
+    return result.rows[0]
+  } catch (error) {
+    console.error("Error updating user role:", error)
+    throw error
+  }
+}
+
+// Types for NextAuth
+declare module "next-auth" {
+  interface User {
+    role: string
+    studentId?: string
+    branch?: string
+    graduatingYear?: number
+  }
+
+  interface Session {
+    user: {
+      id: string
+      name: string
+      email: string
+      role: string
+      studentId?: string
+      branch?: string
+      graduatingYear?: number
+    }
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    role: string
+    id: string
+    studentId?: string
+    branch?: string
+    graduatingYear?: number
+  }
+}
 
