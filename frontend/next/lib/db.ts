@@ -14,12 +14,12 @@ dotenv.config();
 // }
 
 // Create a SQL client with the connection string
-// const sql_client = neon({ connectionString: process.env.DATABASE_URL});
+const sql_client = neon({ connectionString: process.env.DATABASE_URL});
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 // Create a drizzle client with the SQL client
-export const db = drizzle(pool)
+export const db = drizzle(neon)
 
 
 
