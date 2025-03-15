@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createUser } from "@/lib/auth"
+import { createUserWithAuth } from "@/lib/auth"
 
 export async function POST(request: Request) {
   try {
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     }
 
     // Create user
-    const user = await createUser({
+    const user = await createUserWithAuth({
       name,
       email,
       password,

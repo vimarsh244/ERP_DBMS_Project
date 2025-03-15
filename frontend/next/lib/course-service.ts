@@ -1,25 +1,11 @@
-import { executeQuery } from "@/lib/db"
+import supabase from "./supabase"
+import type { Database } from "./database.types"
 
-export interface Course {
-  id: string
-  name: string
-  department: string
-  description: string
-  credits: number
-  created_at: string
-  updated_at: string
-}
+export type Course = Database["public"]["Tables"]["courses"]["Row"]
+export type CourseInsert = Database["public"]["Tables"]["courses"]["Insert"]
+export type CourseUpdate = Database["public"]["Tables"]["courses"]["Update"]
 
-export interface CourseOffering {
-  id: string
-  course_id: string
-  professor_id: string
-  semester: string
-  year: number
-  max_students: number
-  location: string
-  created_at: string
-  updated_at: string
+export type CourseOffering = Database["public"]["Tables"]["course_offerings"]["Row"] & {
   course_name?: string
   professor_name?: string
   department?: string
@@ -28,107 +14,123 @@ export interface CourseOffering {
   enrolled_count?: number
 }
 
-export interface CourseSchedule {
-  id: string
-  course_offering_id: string
-  day_of_week: string
-  start_time: string
-  end_time: string
-}
-
-export interface Prerequisite {
-  course_id: string
-  prerequisite_id: string
+export type CourseSchedule = Database["public"]["Tables"]["course_schedules"]["Row"]
+export type Prerequisite = Database["public"]["Tables"]["prerequisites"]["Row"] & {
   prerequisite_name?: string
 }
 
-export interface Enrollment {
-  student_id: string
-  course_offering_id: string
-  status: string
-  grade: string | null
-  created_at: string
-  updated_at: string
+export type Enrollment = Database["public"]["Tables"]["enrollments"]["Row"] & {
   student_name?: string
   course_name?: string
 }
 
 /**
  * Register for a course
- * @param courseId The ID of the course to register for
- * @returns A promise that resolves to the updated course
+ * @param studentId The ID of the student
+ * @param courseOfferingId The ID of the course offering to register for
+ * @returns A promise that resolves to the result of the registration
  */
-export async function registerForCourse(courseId: string): Promise<{ success: boolean; message: string }> {
-  console.log(`Registering for course ${courseId}`)
+export async function registerForCourse(
+  studentId: string,
+  courseOfferingId: string,
+): Promise<{ success: boolean; message: string }> {
+  try {
+    // Check prerequisites
+    const prerequisites = await checkPrerequisites(studentId, courseOfferingId)
+    if (!prerequisites.met) {
+      return {
+        success: false,
+        message: `Prerequisites not met: ${prerequisites.missing.map((p) => p.name).join(", ")}`,
+      }
+    }
 
-  // Check prerequisites
-  // const prerequisites = await checkPrerequisites(courseId)
-  // if (!prerequisites.met) {
-  //   return {
-  //     success: false,
-  //     message: `Prerequisites not met: ${prerequisites.missing.join(", ")}`,
-  //   }
-  // }
+    // Check credit limit
+    const creditCheck = await checkCreditLimit(studentId, courseOfferingId)
+    if (!creditCheck.allowed) {
+      return {
+        success: false,
+        message: `Registering would exceed credit limit. Current: ${creditCheck.current}, Adding: ${creditCheck.adding}, Max: ${creditCheck.max}`,
+      }
+    }
 
-  // // Check credit limit
-  // const creditCheck = await checkCreditLimit(courseId)
-  // if (!creditCheck.allowed) {
-  //   return {
-  //     success: false,
-  //     message: `Registering would exceed credit limit. Current: ${creditCheck.current}, Adding: ${creditCheck.adding}, Max: ${creditCheck.max}`,
-  //   }
-  // }
+    // Check for time conflicts
+    const timeCheck = await checkTimeConflicts(studentId, courseOfferingId)
+    if (timeCheck.hasConflicts) {
+      return {
+        success: false,
+        message: `Time conflict with: ${timeCheck.conflictingCourses.map((c) => `${c.name} (${c.day} ${c.time})`).join(", ")}`,
+      }
+    }
 
-  // // Check for time conflicts
-  // const timeCheck = await checkTimeConflicts(courseId)
-  // if (timeCheck.hasConflicts) {
-  //   return {
-  //     success: false,
-  //     message: `Time conflict with: ${timeCheck.conflictingCourses.join(", ")}`,
-  //   }
-  // }
+    // Enroll the student
+    const { error } = await supabase.from("enrollments").insert({
+      student_id: studentId,
+      course_offering_id: courseOfferingId,
+      status: "enrolled",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
 
-  // In a real application, this would make an API call to register for the course
-  // For now, we'll just return a success message
-  return {
-    success: true,
-    message: `Successfully registered for ${courseId}`,
+    if (error) throw error
+
+    return {
+      success: true,
+      message: `Successfully registered for the course`,
+    }
+  } catch (error) {
+    console.error("Error registering for course:", error)
+    return {
+      success: false,
+      message: "An error occurred during registration",
+    }
   }
 }
 
 /**
  * Drop a course
- * @param courseId The ID of the course to drop
- * @returns A promise that resolves to the updated course
+ * @param studentId The ID of the student
+ * @param courseOfferingId The ID of the course offering to drop
+ * @returns A promise that resolves to the result of dropping the course
  */
-export async function dropCourse(courseId: string): Promise<{ success: boolean; message: string }> {
-  console.log(`Dropping course ${courseId}`)
+export async function dropCourse(
+  studentId: string,
+  courseOfferingId: string,
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const { error } = await supabase
+      .from("enrollments")
+      .delete()
+      .eq("student_id", studentId)
+      .eq("course_offering_id", courseOfferingId)
 
-  // In a real application, this would make an API call to drop the course
-  // For now, we'll just return a success message
-  return {
-    success: true,
-    message: `Successfully dropped ${courseId}`,
+    if (error) throw error
+
+    return {
+      success: true,
+      message: `Successfully dropped the course`,
+    }
+  } catch (error) {
+    console.error("Error dropping course:", error)
+    return {
+      success: false,
+      message: "An error occurred while dropping the course",
+    }
   }
 }
 
 // Create a new course
-export async function createCourse(data: {
-  id: string
-  name: string
-  department: string
-  description: string
-  credits: number
-}): Promise<Course> {
+export async function createCourse(data: CourseInsert): Promise<Course> {
   try {
-    const result = await executeQuery(
-      `INSERT INTO courses (id, name, department, description, credits) 
-       VALUES ($1, $2, $3, $4, $5) 
-       RETURNING *`,
-      [data.id, data.name, data.department, data.description, data.credits],
-    )
+    const insertData = {
+      ...data,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
 
-    return result.rows[0]
+    const { data: newCourse, error } = await supabase.from("courses").insert(insertData).select().single()
+
+    if (error) throw error
+    return newCourse
   } catch (error) {
     console.error("Error creating course:", error)
     throw error
@@ -138,9 +140,10 @@ export async function createCourse(data: {
 // Get all courses
 export async function getAllCourses(): Promise<Course[]> {
   try {
-    const result = await executeQuery("SELECT * FROM courses ORDER BY department, id")
+    const { data, error } = await supabase.from("courses").select("*").order("department").order("id")
 
-    return result.rows
+    if (error) throw error
+    return data || []
   } catch (error) {
     console.error("Error fetching courses:", error)
     throw error
@@ -150,13 +153,14 @@ export async function getAllCourses(): Promise<Course[]> {
 // Get course by ID
 export async function getCourseById(id: string): Promise<Course | null> {
   try {
-    const result = await executeQuery("SELECT * FROM courses WHERE id = $1", [id])
+    const { data, error } = await supabase.from("courses").select("*").eq("id", id).single()
 
-    if (result.rows.length === 0) {
-      return null
+    if (error) {
+      if (error.code === "PGRST116") return null // No rows returned
+      throw error
     }
 
-    return result.rows[0]
+    return data
   } catch (error) {
     console.error("Error fetching course:", error)
     throw error
@@ -164,58 +168,22 @@ export async function getCourseById(id: string): Promise<Course | null> {
 }
 
 // Update course
-export async function updateCourse(
-  id: string,
-  data: {
-    name?: string
-    department?: string
-    description?: string
-    credits?: number
-  },
-): Promise<Course | null> {
+export async function updateCourse(id: string, data: CourseUpdate): Promise<Course | null> {
   try {
-    const updates: string[] = []
-    const values: any[] = []
-    let paramIndex = 1
-
-    if (data.name !== undefined) {
-      updates.push(`name = $${paramIndex++}`)
-      values.push(data.name)
+    const updateData = {
+      ...data,
+      updated_at: new Date().toISOString(),
     }
 
-    if (data.department !== undefined) {
-      updates.push(`department = $${paramIndex++}`)
-      values.push(data.department)
-    }
+    const { data: updatedCourse, error } = await supabase
+      .from("courses")
+      .update(updateData)
+      .eq("id", id)
+      .select()
+      .single()
 
-    if (data.description !== undefined) {
-      updates.push(`description = $${paramIndex++}`)
-      values.push(data.description)
-    }
-
-    if (data.credits !== undefined) {
-      updates.push(`credits = $${paramIndex++}`)
-      values.push(data.credits)
-    }
-
-    updates.push(`updated_at = CURRENT_TIMESTAMP`)
-
-    values.push(id)
-
-    const query = `
-      UPDATE courses 
-      SET ${updates.join(", ")} 
-      WHERE id = $${paramIndex} 
-      RETURNING *
-    `
-
-    const result = await executeQuery(query, values)
-
-    if (result.rows.length === 0) {
-      return null
-    }
-
-    return result.rows[0]
+    if (error) throw error
+    return updatedCourse
   } catch (error) {
     console.error("Error updating course:", error)
     throw error
@@ -225,9 +193,10 @@ export async function updateCourse(
 // Delete course
 export async function deleteCourse(id: string): Promise<boolean> {
   try {
-    const result = await executeQuery("DELETE FROM courses WHERE id = $1 RETURNING id", [id])
+    const { error } = await supabase.from("courses").delete().eq("id", id)
 
-    return result.rows.length > 0
+    if (error) throw error
+    return true
   } catch (error) {
     console.error("Error deleting course:", error)
     throw error
@@ -235,16 +204,24 @@ export async function deleteCourse(id: string): Promise<boolean> {
 }
 
 // Add prerequisite to a course
-export async function addPrerequisite(courseId: string, prerequisiteId: string): Promise<Prerequisite> {
+export async function addPrerequisite(
+  courseId: string,
+  prerequisiteId: string,
+  minGrade?: string,
+): Promise<Prerequisite> {
   try {
-    const result = await executeQuery(
-      `INSERT INTO prerequisites (course_id, prerequisite_id) 
-       VALUES ($1, $2) 
-       RETURNING *`,
-      [courseId, prerequisiteId],
-    )
+    const { data, error } = await supabase
+      .from("prerequisites")
+      .insert({
+        course_id: courseId,
+        prerequisite_id: prerequisiteId,
+        min_grade: minGrade,
+      })
+      .select()
+      .single()
 
-    return result.rows[0]
+    if (error) throw error
+    return data
   } catch (error) {
     console.error("Error adding prerequisite:", error)
     throw error
@@ -254,12 +231,14 @@ export async function addPrerequisite(courseId: string, prerequisiteId: string):
 // Remove prerequisite from a course
 export async function removePrerequisite(courseId: string, prerequisiteId: string): Promise<boolean> {
   try {
-    const result = await executeQuery(
-      "DELETE FROM prerequisites WHERE course_id = $1 AND prerequisite_id = $2 RETURNING course_id",
-      [courseId, prerequisiteId],
-    )
+    const { error } = await supabase
+      .from("prerequisites")
+      .delete()
+      .eq("course_id", courseId)
+      .eq("prerequisite_id", prerequisiteId)
 
-    return result.rows.length > 0
+    if (error) throw error
+    return true
   } catch (error) {
     console.error("Error removing prerequisite:", error)
     throw error
@@ -269,15 +248,30 @@ export async function removePrerequisite(courseId: string, prerequisiteId: strin
 // Get prerequisites for a course
 export async function getPrerequisitesForCourse(courseId: string): Promise<Prerequisite[]> {
   try {
-    const result = await executeQuery(
-      `SELECT p.*, c.name as prerequisite_name 
-       FROM prerequisites p
-       JOIN courses c ON p.prerequisite_id = c.id
-       WHERE p.course_id = $1`,
-      [courseId],
-    )
+    // First get the prerequisites
+    const { data: prerequisites, error } = await supabase.from("prerequisites").select("*").eq("course_id", courseId)
 
-    return result.rows
+    if (error) throw error
+
+    // Then get the course names for each prerequisite
+    const result: Prerequisite[] = []
+
+    for (const prereq of prerequisites || []) {
+      const { data: course, error: courseError } = await supabase
+        .from("courses")
+        .select("name")
+        .eq("id", prereq.prerequisite_id)
+        .single()
+
+      if (courseError && courseError.code !== "PGRST116") throw courseError
+
+      result.push({
+        ...prereq,
+        prerequisite_name: course?.name,
+      })
+    }
+
+    return result
   } catch (error) {
     console.error("Error fetching prerequisites:", error)
     throw error
@@ -285,23 +279,18 @@ export async function getPrerequisitesForCourse(courseId: string): Promise<Prere
 }
 
 // Create a new course offering
-export async function createCourseOffering(data: {
-  course_id: string
-  professor_id: string
-  semester: string
-  year: number
-  max_students: number
-  location: string
-}): Promise<CourseOffering> {
+export async function createCourseOffering(data: any): Promise<CourseOffering> {
   try {
-    const result = await executeQuery(
-      `INSERT INTO course_offerings (course_id, professor_id, semester, year, max_students, location) 
-       VALUES ($1, $2, $3, $4, $5, $6) 
-       RETURNING *`,
-      [data.course_id, data.professor_id, data.semester, data.year, data.max_students, data.location],
-    )
+    const insertData = {
+      ...data,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
 
-    return result.rows[0]
+    const { data: newOffering, error } = await supabase.from("course_offerings").insert(insertData).select().single()
+
+    if (error) throw error
+    return newOffering
   } catch (error) {
     console.error("Error creating course offering:", error)
     throw error
@@ -311,32 +300,71 @@ export async function createCourseOffering(data: {
 // Get all course offerings with additional details
 export async function getAllCourseOfferings(): Promise<CourseOffering[]> {
   try {
-    const result = await executeQuery(
-      `SELECT co.*, 
-              c.name as course_name, 
-              c.department, 
-              c.credits,
-              u.name as professor_name,
-              (SELECT COUNT(*) FROM enrollments e WHERE e.course_offering_id = co.id) as enrolled_count
-       FROM course_offerings co
-       JOIN courses c ON co.course_id = c.id
-       LEFT JOIN users u ON co.professor_id = u.id
-       ORDER BY co.year DESC, co.semester, c.department, c.id`,
-    )
+    // Get course offerings
+    const { data: offerings, error } = await supabase
+      .from("course_offerings")
+      .select("*")
+      .order("year", { ascending: false })
+      .order("semester")
 
-    const offerings = result.rows
+    if (error) throw error
 
-    // Get schedules for each offering
-    for (const offering of offerings) {
-      const schedules = await executeQuery(
-        "SELECT * FROM course_schedules WHERE course_offering_id = $1 ORDER BY day_of_week, start_time",
-        [offering.id],
-      )
+    // Enhance with additional data
+    const result: CourseOffering[] = []
 
-      offering.schedules = schedules.rows
+    for (const offering of offerings || []) {
+      // Get course details
+      const { data: course, error: courseError } = await supabase
+        .from("courses")
+        .select("name, department, credits")
+        .eq("id", offering.course_id)
+        .single()
+
+      if (courseError && courseError.code !== "PGRST116") throw courseError
+
+      // Get professor name
+      let professorName = null
+      if (offering.professor_id) {
+        const { data: professor, error: professorError } = await supabase
+          .from("users")
+          .select("name")
+          .eq("id", offering.professor_id)
+          .single()
+
+        if (professorError && professorError.code !== "PGRST116") throw professorError
+        professorName = professor?.name
+      }
+
+      // Get enrollment count
+      const { count: enrolledCount, error: enrollmentError } = await supabase
+        .from("enrollments")
+        .select("*", { count: "exact", head: true })
+        .eq("course_offering_id", offering.id)
+
+      if (enrollmentError) throw enrollmentError
+
+      // Get schedules
+      const { data: schedules, error: schedulesError } = await supabase
+        .from("course_schedules")
+        .select("*")
+        .eq("course_offering_id", offering.id)
+        .order("day_of_week")
+        .order("start_time")
+
+      if (schedulesError) throw schedulesError
+
+      result.push({
+        ...offering,
+        course_name: course?.name,
+        department: course?.department,
+        credits: course?.credits,
+        professor_name: professorName,
+        enrolled_count: enrolledCount || 0,
+        schedules: schedules || [],
+      })
     }
 
-    return offerings
+    return result
   } catch (error) {
     console.error("Error fetching course offerings:", error)
     throw error
@@ -346,35 +374,63 @@ export async function getAllCourseOfferings(): Promise<CourseOffering[]> {
 // Get course offering by ID with additional details
 export async function getCourseOfferingById(id: string): Promise<CourseOffering | null> {
   try {
-    const result = await executeQuery(
-      `SELECT co.*, 
-              c.name as course_name, 
-              c.department, 
-              c.credits,
-              u.name as professor_name,
-              (SELECT COUNT(*) FROM enrollments e WHERE e.course_offering_id = co.id) as enrolled_count
-       FROM course_offerings co
-       JOIN courses c ON co.course_id = c.id
-       LEFT JOIN users u ON co.professor_id = u.id
-       WHERE co.id = $1`,
-      [id],
-    )
+    // Get course offering
+    const { data: offering, error } = await supabase.from("course_offerings").select("*").eq("id", id).single()
 
-    if (result.rows.length === 0) {
-      return null
+    if (error) {
+      if (error.code === "PGRST116") return null // No rows returned
+      throw error
     }
 
-    const offering = result.rows[0]
+    // Get course details
+    const { data: course, error: courseError } = await supabase
+      .from("courses")
+      .select("name, department, credits")
+      .eq("id", offering.course_id)
+      .single()
+
+    if (courseError && courseError.code !== "PGRST116") throw courseError
+
+    // Get professor name
+    let professorName = null
+    if (offering.professor_id) {
+      const { data: professor, error: professorError } = await supabase
+        .from("users")
+        .select("name")
+        .eq("id", offering.professor_id)
+        .single()
+
+      if (professorError && professorError.code !== "PGRST116") throw professorError
+      professorName = professor?.name
+    }
+
+    // Get enrollment count
+    const { count: enrolledCount, error: enrollmentError } = await supabase
+      .from("enrollments")
+      .select("*", { count: "exact", head: true })
+      .eq("course_offering_id", offering.id)
+
+    if (enrollmentError) throw enrollmentError
 
     // Get schedules
-    const schedules = await executeQuery(
-      "SELECT * FROM course_schedules WHERE course_offering_id = $1 ORDER BY day_of_week, start_time",
-      [id],
-    )
+    const { data: schedules, error: schedulesError } = await supabase
+      .from("course_schedules")
+      .select("*")
+      .eq("course_offering_id", offering.id)
+      .order("day_of_week")
+      .order("start_time")
 
-    offering.schedules = schedules.rows
+    if (schedulesError) throw schedulesError
 
-    return offering
+    return {
+      ...offering,
+      course_name: course?.name,
+      department: course?.department,
+      credits: course?.credits,
+      professor_name: professorName,
+      enrolled_count: enrolledCount || 0,
+      schedules: schedules || [],
+    }
   } catch (error) {
     console.error("Error fetching course offering:", error)
     throw error
@@ -382,21 +438,12 @@ export async function getCourseOfferingById(id: string): Promise<CourseOffering 
 }
 
 // Add schedule to a course offering
-export async function addCourseSchedule(data: {
-  course_offering_id: string
-  day_of_week: string
-  start_time: string
-  end_time: string
-}): Promise<CourseSchedule> {
+export async function addCourseSchedule(data: any): Promise<CourseSchedule> {
   try {
-    const result = await executeQuery(
-      `INSERT INTO course_schedules (course_offering_id, day_of_week, start_time, end_time) 
-       VALUES ($1, $2, $3, $4) 
-       RETURNING *`,
-      [data.course_offering_id, data.day_of_week, data.start_time, data.end_time],
-    )
+    const { data: newSchedule, error } = await supabase.from("course_schedules").insert(data).select().single()
 
-    return result.rows[0]
+    if (error) throw error
+    return newSchedule
   } catch (error) {
     console.error("Error adding course schedule:", error)
     throw error
@@ -406,9 +453,10 @@ export async function addCourseSchedule(data: {
 // Remove schedule from a course offering
 export async function removeCourseSchedule(id: string): Promise<boolean> {
   try {
-    const result = await executeQuery("DELETE FROM course_schedules WHERE id = $1 RETURNING id", [id])
+    const { error } = await supabase.from("course_schedules").delete().eq("id", id)
 
-    return result.rows.length > 0
+    if (error) throw error
+    return true
   } catch (error) {
     console.error("Error removing course schedule:", error)
     throw error
@@ -418,14 +466,18 @@ export async function removeCourseSchedule(id: string): Promise<boolean> {
 // Enroll a student in a course
 export async function enrollStudent(studentId: string, courseOfferingId: string): Promise<Enrollment> {
   try {
-    const result = await executeQuery(
-      `INSERT INTO enrollments (student_id, course_offering_id, status) 
-       VALUES ($1, $2, 'enrolled') 
-       RETURNING *`,
-      [studentId, courseOfferingId],
-    )
+    const enrollmentData = {
+      student_id: studentId,
+      course_offering_id: courseOfferingId,
+      status: "enrolled",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
 
-    return result.rows[0]
+    const { data: enrollment, error } = await supabase.from("enrollments").insert(enrollmentData).select().single()
+
+    if (error) throw error
+    return enrollment
   } catch (error) {
     console.error("Error enrolling student:", error)
     throw error
@@ -435,12 +487,14 @@ export async function enrollStudent(studentId: string, courseOfferingId: string)
 // Drop a course enrollment
 export async function dropEnrollment(studentId: string, courseOfferingId: string): Promise<boolean> {
   try {
-    const result = await executeQuery(
-      "DELETE FROM enrollments WHERE student_id = $1 AND course_offering_id = $2 RETURNING student_id",
-      [studentId, courseOfferingId],
-    )
+    const { error } = await supabase
+      .from("enrollments")
+      .delete()
+      .eq("student_id", studentId)
+      .eq("course_offering_id", courseOfferingId)
 
-    return result.rows.length > 0
+    if (error) throw error
+    return true
   } catch (error) {
     console.error("Error dropping enrollment:", error)
     throw error
@@ -450,18 +504,48 @@ export async function dropEnrollment(studentId: string, courseOfferingId: string
 // Get enrollments for a student
 export async function getEnrollmentsForStudent(studentId: string): Promise<Enrollment[]> {
   try {
-    const result = await executeQuery(
-      `SELECT e.*, 
-              c.name as course_name
-       FROM enrollments e
-       JOIN course_offerings co ON e.course_offering_id = co.id
-       JOIN courses c ON co.course_id = c.id
-       WHERE e.student_id = $1
-       ORDER BY e.created_at DESC`,
-      [studentId],
-    )
+    // Get enrollments
+    const { data: enrollments, error } = await supabase
+      .from("enrollments")
+      .select("*")
+      .eq("student_id", studentId)
+      .order("created_at", { ascending: false })
 
-    return result.rows
+    if (error) throw error
+
+    // Enhance with course names
+    const result: Enrollment[] = []
+
+    for (const enrollment of enrollments || []) {
+      // Get course offering
+      const { data: offering, error: offeringError } = await supabase
+        .from("course_offerings")
+        .select("course_id")
+        .eq("id", enrollment.course_offering_id)
+        .single()
+
+      if (offeringError && offeringError.code !== "PGRST116") throw offeringError
+
+      // Get course name
+      let courseName = null
+      if (offering) {
+        const { data: course, error: courseError } = await supabase
+          .from("courses")
+          .select("name")
+          .eq("id", offering.course_id)
+          .single()
+
+        if (courseError && courseError.code !== "PGRST116") throw courseError
+        courseName = course?.name
+      }
+
+      result.push({
+        ...enrollment,
+        course_name: courseName,
+      })
+    }
+
+    return result
   } catch (error) {
     console.error("Error fetching student enrollments:", error)
     throw error
@@ -471,17 +555,42 @@ export async function getEnrollmentsForStudent(studentId: string): Promise<Enrol
 // Get enrollments for a course offering
 export async function getEnrollmentsForCourseOffering(courseOfferingId: string): Promise<Enrollment[]> {
   try {
-    const result = await executeQuery(
-      `SELECT e.*, 
-              u.name as student_name
-       FROM enrollments e
-       JOIN users u ON e.student_id = u.id
-       WHERE e.course_offering_id = $1
-       ORDER BY u.name`,
-      [courseOfferingId],
-    )
+    // Get enrollments
+    const { data: enrollments, error } = await supabase
+      .from("enrollments")
+      .select("*")
+      .eq("course_offering_id", courseOfferingId)
 
-    return result.rows
+    if (error) throw error
+
+    // Enhance with student names
+    const result: Enrollment[] = []
+
+    for (const enrollment of enrollments || []) {
+      // Get student name
+      const { data: student, error: studentError } = await supabase
+        .from("users")
+        .select("name")
+        .eq("id", enrollment.student_id)
+        .single()
+
+      if (studentError && studentError.code !== "PGRST116") throw studentError
+
+      result.push({
+        ...enrollment,
+        student_name: student?.name,
+      })
+    }
+
+    // Sort by student name
+    result.sort((a, b) => {
+      if (a.student_name && b.student_name) {
+        return a.student_name.localeCompare(b.student_name)
+      }
+      return 0
+    })
+
+    return result
   } catch (error) {
     console.error("Error fetching course enrollments:", error)
     throw error
@@ -491,31 +600,55 @@ export async function getEnrollmentsForCourseOffering(courseOfferingId: string):
 // Check if a student has completed prerequisites for a course
 export async function checkPrerequisites(
   studentId: string,
-  courseId: string,
+  courseOfferingId: string,
 ): Promise<{
   met: boolean
   missing: { id: string; name: string }[]
 }> {
   try {
+    // Get course ID from offering
+    const { data: offering, error: offeringError } = await supabase
+      .from("course_offerings")
+      .select("course_id")
+      .eq("id", courseOfferingId)
+      .single()
+
+    if (offeringError) throw offeringError
+
     // Get prerequisites for the course
-    const prerequisites = await getPrerequisitesForCourse(courseId)
+    const prerequisites = await getPrerequisitesForCourse(offering.course_id)
 
     if (prerequisites.length === 0) {
       return { met: true, missing: [] }
     }
 
     // Get completed courses for the student
-    const completedCoursesResult = await executeQuery(
-      `SELECT DISTINCT c.id, c.name
-       FROM enrollments e
-       JOIN course_offerings co ON e.course_offering_id = co.id
-       JOIN courses c ON co.course_id = c.id
-       WHERE e.student_id = $1 AND e.status = 'completed' AND (e.grade IS NULL OR e.grade NOT IN ('F', 'D-', 'D'))`,
-      [studentId],
-    )
+    const { data: enrollments, error: enrollmentsError } = await supabase
+      .from("enrollments")
+      .select("course_offering_id, grade")
+      .eq("student_id", studentId)
+      .eq("status", "completed")
+      .not("grade", "is", null)
+      .not("grade", "in", '("F", "D-", "D")')
 
-    const completedCourses = completedCoursesResult.rows
-    const completedCourseIds = completedCourses.map((c) => c.id)
+    if (enrollmentsError) throw enrollmentsError
+
+    // Get course IDs from offerings
+    const completedCourseIds: string[] = []
+
+    for (const enrollment of enrollments || []) {
+      const { data: completedOffering, error: completedOfferingError } = await supabase
+        .from("course_offerings")
+        .select("course_id")
+        .eq("id", enrollment.course_offering_id)
+        .single()
+
+      if (completedOfferingError && completedOfferingError.code !== "PGRST116") throw completedOfferingError
+
+      if (completedOffering) {
+        completedCourseIds.push(completedOffering.course_id)
+      }
+    }
 
     // Check which prerequisites are missing
     const missingPrerequisites = prerequisites
@@ -545,65 +678,93 @@ export async function checkTimeConflicts(
 }> {
   try {
     // Get schedules for the course offering
-    const schedulesResult = await executeQuery(
-      `SELECT cs.* 
-       FROM course_schedules cs
-       WHERE cs.course_offering_id = $1`,
-      [courseOfferingId],
-    )
+    const { data: newSchedules, error: newSchedulesError } = await supabase
+      .from("course_schedules")
+      .select("*")
+      .eq("course_offering_id", courseOfferingId)
 
-    const schedules = schedulesResult.rows
+    if (newSchedulesError) throw newSchedulesError
 
-    if (schedules.length === 0) {
+    if (!newSchedules || newSchedules.length === 0) {
       return { hasConflicts: false, conflictingCourses: [] }
     }
 
-    // Get current enrollments and their schedules
-    const currentEnrollmentsResult = await executeQuery(
-      `SELECT co.id as offering_id, 
-              c.id as course_id, 
-              c.name as course_name, 
-              cs.day_of_week, 
-              cs.start_time, 
-              cs.end_time
-       FROM enrollments e
-       JOIN course_offerings co ON e.course_offering_id = co.id
-       JOIN courses c ON co.course_id = c.id
-       JOIN course_schedules cs ON cs.course_offering_id = co.id
-       WHERE e.student_id = $1 AND e.status = 'enrolled'`,
-      [studentId],
-    )
+    // Get current enrollments
+    const { data: enrollments, error: enrollmentsError } = await supabase
+      .from("enrollments")
+      .select("course_offering_id")
+      .eq("student_id", studentId)
+      .eq("status", "enrolled")
 
-    const currentSchedules = currentEnrollmentsResult.rows
+    if (enrollmentsError) throw enrollmentsError
 
     // Check for conflicts
     const conflicts: { id: string; name: string; day: string; time: string }[] = []
 
-    for (const newSchedule of schedules) {
-      for (const currentSchedule of currentSchedules) {
-        // Skip if different days
-        if (newSchedule.day_of_week !== currentSchedule.day_of_week) {
-          continue
+    for (const enrollment of enrollments || []) {
+      // Skip if it's the same course offering
+      if (enrollment.course_offering_id === courseOfferingId) continue
+
+      // Get schedules for this enrollment
+      const { data: currentSchedules, error: currentSchedulesError } = await supabase
+        .from("course_schedules")
+        .select("*")
+        .eq("course_offering_id", enrollment.course_offering_id)
+
+      if (currentSchedulesError) throw currentSchedulesError
+
+      // Get course details
+      const { data: currentOffering, error: currentOfferingError } = await supabase
+        .from("course_offerings")
+        .select("course_id")
+        .eq("id", enrollment.course_offering_id)
+        .single()
+
+      if (currentOfferingError && currentOfferingError.code !== "PGRST116") throw currentOfferingError
+
+      let courseName = currentOffering?.course_id || ""
+
+      if (currentOffering) {
+        const { data: course, error: courseError } = await supabase
+          .from("courses")
+          .select("name")
+          .eq("id", currentOffering.course_id)
+          .single()
+
+        if (courseError && courseError.code !== "PGRST116") throw courseError
+
+        if (course) {
+          courseName = course.name
         }
+      }
 
-        // Check for time overlap
-        const newStart = new Date(`1970-01-01T${newSchedule.start_time}`)
-        const newEnd = new Date(`1970-01-01T${newSchedule.end_time}`)
-        const currentStart = new Date(`1970-01-01T${currentSchedule.start_time}`)
-        const currentEnd = new Date(`1970-01-01T${currentSchedule.end_time}`)
+      // Check for time conflicts
+      for (const newSchedule of newSchedules) {
+        for (const currentSchedule of currentSchedules || []) {
+          // Skip if different days
+          if (newSchedule.day_of_week !== currentSchedule.day_of_week) {
+            continue
+          }
 
-        if (
-          (newStart >= currentStart && newStart < currentEnd) ||
-          (newEnd > currentStart && newEnd <= currentEnd) ||
-          (newStart <= currentStart && newEnd >= currentEnd)
-        ) {
-          conflicts.push({
-            id: currentSchedule.course_id,
-            name: currentSchedule.course_name,
-            day: currentSchedule.day_of_week,
-            time: `${currentSchedule.start_time} - ${currentSchedule.end_time}`,
-          })
-          break // No need to check other schedules for this course
+          // Check for time overlap
+          const newStart = new Date(`1970-01-01T${newSchedule.start_time}`)
+          const newEnd = new Date(`1970-01-01T${newSchedule.end_time}`)
+          const currentStart = new Date(`1970-01-01T${currentSchedule.start_time}`)
+          const currentEnd = new Date(`1970-01-01T${currentSchedule.end_time}`)
+
+          if (
+            (newStart >= currentStart && newStart < currentEnd) ||
+            (newEnd > currentStart && newEnd <= currentEnd) ||
+            (newStart <= currentStart && newEnd >= currentEnd)
+          ) {
+            conflicts.push({
+              id: currentOffering?.course_id || "",
+              name: courseName,
+              day: currentSchedule.day_of_week,
+              time: `${currentSchedule.start_time.substring(0, 5)} - ${currentSchedule.end_time.substring(0, 5)}`,
+            })
+            break // No need to check other schedules for this course
+          }
         }
       }
     }
@@ -629,32 +790,60 @@ export async function checkCreditLimit(
   max: number
 }> {
   try {
-    // Get current credits
-    const currentCreditsResult = await executeQuery(
-      `SELECT SUM(c.credits) as total_credits
-       FROM enrollments e
-       JOIN course_offerings co ON e.course_offering_id = co.id
-       JOIN courses c ON co.course_id = c.id
-       WHERE e.student_id = $1 AND e.status = 'enrolled'`,
-      [studentId],
-    )
+    // Get current enrollments
+    const { data: enrollments, error: enrollmentsError } = await supabase
+      .from("enrollments")
+      .select("course_offering_id")
+      .eq("student_id", studentId)
+      .eq("status", "enrolled")
 
-    const currentCredits = Number.parseInt(currentCreditsResult.rows[0]?.total_credits || "0")
+    if (enrollmentsError) throw enrollmentsError
 
-    // Get credits for the new course
-    const newCourseCreditsResult = await executeQuery(
-      `SELECT c.credits
-       FROM course_offerings co
-       JOIN courses c ON co.course_id = c.id
-       WHERE co.id = $1`,
-      [courseOfferingId],
-    )
+    // Calculate current credits
+    let currentCredits = 0
 
-    if (newCourseCreditsResult.rows.length === 0) {
-      throw new Error("Course offering not found")
+    for (const enrollment of enrollments || []) {
+      const { data: offering, error: offeringError } = await supabase
+        .from("course_offerings")
+        .select("course_id")
+        .eq("id", enrollment.course_offering_id)
+        .single()
+
+      if (offeringError && offeringError.code !== "PGRST116") throw offeringError
+
+      if (offering) {
+        const { data: course, error: courseError } = await supabase
+          .from("courses")
+          .select("credits")
+          .eq("id", offering.course_id)
+          .single()
+
+        if (courseError && courseError.code !== "PGRST116") throw courseError
+
+        if (course) {
+          currentCredits += course.credits
+        }
+      }
     }
 
-    const newCourseCredits = Number.parseInt(newCourseCreditsResult.rows[0].credits)
+    // Get credits for the new course
+    const { data: newOffering, error: newOfferingError } = await supabase
+      .from("course_offerings")
+      .select("course_id")
+      .eq("id", courseOfferingId)
+      .single()
+
+    if (newOfferingError) throw newOfferingError
+
+    const { data: newCourse, error: newCourseError } = await supabase
+      .from("courses")
+      .select("credits")
+      .eq("id", newOffering.course_id)
+      .single()
+
+    if (newCourseError) throw newCourseError
+
+    const newCourseCredits = newCourse.credits
     const maxCredits = 25 // Maximum allowed credits
 
     return {

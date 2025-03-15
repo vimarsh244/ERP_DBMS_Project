@@ -1,37 +1,22 @@
-import { neon, Pool } from "@neondatabase/serverless"
+import { neon } from "@neondatabase/serverless"
 import { drizzle } from "drizzle-orm/neon-http"
-import dotenv from 'dotenv';
-dotenv.config();
-// import './../envConfig.ts'
-// import {dotenv} from "dotenv"
-
-// console.log("Loading database module")
-// console.log("NEON_DATABASE_URL:", process.env.NEON_DATABASE_URL)
+import supabase from "./supabase"
 
 // Check if the NEON_DATABASE_URL environment variable is set
-// if (!process.env.NEON_DATABASE_URL) {
-  // throw new Error("NEON_DATABASE_URL environment variable is not set")
-// }
+if (!process.env.NEON_DATABASE_URL) {
+  throw new Error("NEON_DATABASE_URL environment variable is not set")
+}
 
 // Create a SQL client with the connection string
-const sql_client = neon({ connectionString: process.env.DATABASE_URL});
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const sql_client = neon(process.env.NEON_DATABASE_URL)
 
 // Create a drizzle client with the SQL client
-export const db = drizzle(neon)
-
-
+export const db = drizzle(sql_client)
 
 // Helper function to execute raw SQL queries
 export async function executeQuery(query: string, params: any[] = []) {
   try {
-    console.log("Database query:", query, params)
-    // const response = await sql_client`${query+params}`
-    const response = await pool.query(query, params)
-    console.log("Database query response:", response)
-    return response;
-    // return response
+    return await sql_client.query(query, params)
   } catch (error) {
     console.error("Database query error:", error)
     throw error
@@ -41,101 +26,31 @@ export async function executeQuery(query: string, params: any[] = []) {
 // Initialize database with required tables
 export async function initializeDatabase() {
   try {
-    // Create users table
-    await executeQuery(`
-      CREATE TABLE IF NOT EXISTS users (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255),
-        role VARCHAR(50) NOT NULL DEFAULT 'student',
-        student_id VARCHAR(50) UNIQUE,
-        branch VARCHAR(100),
-        graduating_year INTEGER,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      )
-    `)
-
-    // Create courses table
-    await executeQuery(`
-      CREATE TABLE IF NOT EXISTS courses (
-        id VARCHAR(50) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        department VARCHAR(100) NOT NULL,
-        description TEXT,
-        credits INTEGER NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      )
-    `)
-
-    // Create prerequisites table
-    await executeQuery(`
-      CREATE TABLE IF NOT EXISTS prerequisites (
-        course_id VARCHAR(50) REFERENCES courses(id) ON DELETE CASCADE,
-        prerequisite_id VARCHAR(50) REFERENCES courses(id) ON DELETE CASCADE,
-        PRIMARY KEY (course_id, prerequisite_id)
-      )
-    `)
-
-    // Create course_offerings table
-    await executeQuery(`
-      CREATE TABLE IF NOT EXISTS course_offerings (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        course_id VARCHAR(50) REFERENCES courses(id) ON DELETE CASCADE,
-        professor_id UUID REFERENCES users(id) ON DELETE SET NULL,
-        semester VARCHAR(50) NOT NULL,
-        year INTEGER NOT NULL,
-        max_students INTEGER NOT NULL DEFAULT 50,
-        location VARCHAR(100),
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      )
-    `)
-
-    // Create course_schedules table
-    await executeQuery(`
-      CREATE TABLE IF NOT EXISTS course_schedules (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        course_offering_id UUID REFERENCES course_offerings(id) ON DELETE CASCADE,
-        day_of_week VARCHAR(10) NOT NULL,
-        start_time TIME NOT NULL,
-        end_time TIME NOT NULL
-      )
-    `)
-
-    // Create enrollments table
-    await executeQuery(`
-      CREATE TABLE IF NOT EXISTS enrollments (
-        student_id UUID REFERENCES users(id) ON DELETE CASCADE,
-        course_offering_id UUID REFERENCES course_offerings(id) ON DELETE CASCADE,
-        status VARCHAR(50) NOT NULL DEFAULT 'enrolled',
-        grade VARCHAR(5),
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (student_id, course_offering_id)
-      )
-    `)
-
-    // Create announcements table
-    await executeQuery(`
-      CREATE TABLE IF NOT EXISTS announcements (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        title VARCHAR(255) NOT NULL,
-        content TEXT NOT NULL,
-        course_offering_id UUID REFERENCES course_offerings(id) ON DELETE CASCADE,
-        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      )
-    `)
+    // Note: In Supabase, we would typically create tables through the Supabase dashboard
+    // or using migrations. This function is kept for compatibility but would be used
+    // differently in a real Supabase implementation.
 
     console.log("Database initialized successfully")
     return true
   } catch (error) {
     console.error("Failed to initialize database:", error)
     return false
+  }
+}
+
+// This function can be used to run SQL queries directly if needed
+export async function executeRawQuery(query: string, params: any[] = []) {
+  try {
+    const { data, error } = await supabase.rpc("execute_sql", {
+      query_text: query,
+      params: params,
+    })
+
+    if (error) throw error
+    return data
+  } catch (error) {
+    console.error("Database query error:", error)
+    throw error
   }
 }
 

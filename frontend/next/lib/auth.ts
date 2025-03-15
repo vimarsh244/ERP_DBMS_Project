@@ -2,7 +2,9 @@ import type { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import GoogleProvider from "next-auth/providers/google"
 import { compare, hash } from "bcryptjs"
-import { executeQuery } from "@/lib/db"
+import supabase from "./supabase"
+import { getUserByEmail } from "./user-service"
+import { createUser as createUserFn } from "./user-service"
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -32,9 +34,7 @@ export const authOptions: NextAuthOptions = {
 
         try {
           // Find user by email
-          const result = await executeQuery("SELECT * FROM users WHERE email = $1 LIMIT 1", [credentials.email])
-
-          const user = result.rows[0]
+          const user = await getUserByEmail(credentials.email)
 
           if (!user || !user.password) {
             return null
@@ -76,25 +76,26 @@ export const authOptions: NextAuthOptions = {
       // If it's a Google sign-in, check if the user exists in our database
       if (account?.provider === "google") {
         try {
-          const result = await executeQuery("SELECT * FROM users WHERE email = $1 LIMIT 1", [token.email])
+          const existingUser = await getUserByEmail(token.email as string)
 
-          if (result.rows.length === 0) {
+          if (!existingUser) {
             // User doesn't exist, create a new user
-            const newUser = await executeQuery(
-              "INSERT INTO users (name, email, role) VALUES ($1, $2, $3) RETURNING *",
-              [token.name, token.email, "student"],
-            )
+            const newUser = await createUserFn({
+              name: token.name as string,
+              email: token.email as string,
+              role: "student",
+              password: "", // No password for OAuth users
+            })
 
             token.role = "student"
-            token.id = newUser.rows[0].id
+            token.id = newUser.id
           } else {
             // User exists, update token with user data
-            const user = result.rows[0]
-            token.role = user.role
-            token.id = user.id
-            token.studentId = user.student_id
-            token.branch = user.branch
-            token.graduatingYear = user.graduating_year
+            token.role = existingUser.role
+            token.id = existingUser.id
+            token.studentId = existingUser.student_id
+            token.branch = existingUser.branch
+            token.graduatingYear = existingUser.graduating_year
           }
         } catch (error) {
           console.error("Error handling Google sign-in:", error)
@@ -126,7 +127,7 @@ export const authOptions: NextAuthOptions = {
 }
 
 // Helper function to create a new user
-export async function createUser({
+export async function createUserWithAuth({
   name,
   email,
   password,
@@ -145,9 +146,9 @@ export async function createUser({
 }) {
   try {
     // Check if user already exists
-    const existingUser = await executeQuery("SELECT * FROM users WHERE email = $1", [email])
+    const existingUser = await getUserByEmail(email)
 
-    if (existingUser.rows.length > 0) {
+    if (existingUser) {
       throw new Error("User already exists")
     }
 
@@ -155,14 +156,25 @@ export async function createUser({
     const hashedPassword = await hash(password, 10)
 
     // Create user
-    const result = await executeQuery(
-      `INSERT INTO users (name, email, password, role, student_id, branch, graduating_year) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) 
-       RETURNING id, name, email, role, student_id, branch, graduating_year`,
-      [name, email, hashedPassword, role, studentId, branch, graduatingYear],
-    )
+    const newUser = await createUserFn({
+      name,
+      email,
+      password: hashedPassword,
+      role,
+      student_id: studentId,
+      branch,
+      graduating_year: graduatingYear,
+    })
 
-    return result.rows[0]
+    return {
+      id: newUser.id,
+      name: newUser.name,
+      email: newUser.email,
+      role: newUser.role,
+      student_id: newUser.student_id,
+      branch: newUser.branch,
+      graduating_year: newUser.graduating_year,
+    }
   } catch (error) {
     console.error("Error creating user:", error)
     throw error
@@ -172,16 +184,23 @@ export async function createUser({
 // Helper function to update a user's role
 export async function updateUserRole(userId: string, role: string) {
   try {
-    const result = await executeQuery(
-      "UPDATE users SET role = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
-      [role, userId],
-    )
+    const { data, error } = await supabase
+      .from("users")
+      .update({
+        role,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", userId)
+      .select()
+      .single()
 
-    if (result.rows.length === 0) {
+    if (error) throw error
+
+    if (!data) {
       throw new Error("User not found")
     }
 
-    return result.rows[0]
+    return data
   } catch (error) {
     console.error("Error updating user role:", error)
     throw error
@@ -219,4 +238,6 @@ declare module "next-auth/jwt" {
     graduatingYear?: number
   }
 }
+
+export const createUser = createUserFn
 

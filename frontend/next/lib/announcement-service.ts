@@ -1,13 +1,7 @@
-import { executeQuery } from "@/lib/db"
+import supabase from "./supabase"
+import type { Database } from "./database.types"
 
-export interface Announcement {
-  id: string
-  title: string
-  content: string
-  course_offering_id: string
-  created_by: string
-  created_at: string
-  updated_at: string
+export type Announcement = Database["public"]["Tables"]["announcements"]["Row"] & {
   course_name?: string
   creator_name?: string
 }
@@ -18,16 +12,22 @@ export async function createAnnouncement(data: {
   content: string
   course_offering_id: string
   created_by: string
+  priority?: string
+  attachment_urls?: string[]
+  is_pinned?: boolean
 }): Promise<Announcement> {
   try {
-    const result = await executeQuery(
-      `INSERT INTO announcements (title, content, course_offering_id, created_by) 
-       VALUES ($1, $2, $3, $4) 
-       RETURNING *`,
-      [data.title, data.content, data.course_offering_id, data.created_by],
-    )
+    const insertData = {
+      ...data,
+      visible_from: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
 
-    return result.rows[0]
+    const { data: newAnnouncement, error } = await supabase.from("announcements").insert(insertData).select().single()
+
+    if (error) throw error
+    return newAnnouncement
   } catch (error) {
     console.error("Error creating announcement:", error)
     throw error
@@ -37,18 +37,60 @@ export async function createAnnouncement(data: {
 // Get all announcements
 export async function getAllAnnouncements(): Promise<Announcement[]> {
   try {
-    const result = await executeQuery(
-      `SELECT a.*, 
-              c.name as course_name, 
-              u.name as creator_name
-       FROM announcements a
-       JOIN course_offerings co ON a.course_offering_id = co.id
-       JOIN courses c ON co.course_id = c.id
-       JOIN users u ON a.created_by = u.id
-       ORDER BY a.created_at DESC`,
-    )
+    // Get announcements
+    const { data: announcements, error } = await supabase
+      .from("announcements")
+      .select("*")
+      .order("created_at", { ascending: false })
 
-    return result.rows
+    if (error) throw error
+
+    // Enhance with course and creator names
+    const result: Announcement[] = []
+
+    for (const announcement of announcements || []) {
+      // Get course name
+      const { data: offering, error: offeringError } = await supabase
+        .from("course_offerings")
+        .select("course_id")
+        .eq("id", announcement.course_offering_id)
+        .single()
+
+      if (offeringError && offeringError.code !== "PGRST116") throw offeringError
+
+      let courseName = null
+      if (offering) {
+        const { data: course, error: courseError } = await supabase
+          .from("courses")
+          .select("name")
+          .eq("id", offering.course_id)
+          .single()
+
+        if (courseError && courseError.code !== "PGRST116") throw courseError
+        courseName = course?.name
+      }
+
+      // Get creator name
+      let creatorName = null
+      if (announcement.created_by) {
+        const { data: creator, error: creatorError } = await supabase
+          .from("users")
+          .select("name")
+          .eq("id", announcement.created_by)
+          .single()
+
+        if (creatorError && creatorError.code !== "PGRST116") throw creatorError
+        creatorName = creator?.name
+      }
+
+      result.push({
+        ...announcement,
+        course_name: courseName,
+        creator_name: creatorName,
+      })
+    }
+
+    return result
   } catch (error) {
     console.error("Error fetching announcements:", error)
     throw error
@@ -58,20 +100,61 @@ export async function getAllAnnouncements(): Promise<Announcement[]> {
 // Get announcements for a course offering
 export async function getAnnouncementsForCourseOffering(courseOfferingId: string): Promise<Announcement[]> {
   try {
-    const result = await executeQuery(
-      `SELECT a.*, 
-              c.name as course_name, 
-              u.name as creator_name
-       FROM announcements a
-       JOIN course_offerings co ON a.course_offering_id = co.id
-       JOIN courses c ON co.course_id = c.id
-       JOIN users u ON a.created_by = u.id
-       WHERE a.course_offering_id = $1
-       ORDER BY a.created_at DESC`,
-      [courseOfferingId],
-    )
+    // Get announcements
+    const { data: announcements, error } = await supabase
+      .from("announcements")
+      .select("*")
+      .eq("course_offering_id", courseOfferingId)
+      .order("created_at", { ascending: false })
 
-    return result.rows
+    if (error) throw error
+
+    // Enhance with course and creator names
+    const result: Announcement[] = []
+
+    for (const announcement of announcements || []) {
+      // Get course name
+      const { data: offering, error: offeringError } = await supabase
+        .from("course_offerings")
+        .select("course_id")
+        .eq("id", announcement.course_offering_id)
+        .single()
+
+      if (offeringError && offeringError.code !== "PGRST116") throw offeringError
+
+      let courseName = null
+      if (offering) {
+        const { data: course, error: courseError } = await supabase
+          .from("courses")
+          .select("name")
+          .eq("id", offering.course_id)
+          .single()
+
+        if (courseError && courseError.code !== "PGRST116") throw courseError
+        courseName = course?.name
+      }
+
+      // Get creator name
+      let creatorName = null
+      if (announcement.created_by) {
+        const { data: creator, error: creatorError } = await supabase
+          .from("users")
+          .select("name")
+          .eq("id", announcement.created_by)
+          .single()
+
+        if (creatorError && creatorError.code !== "PGRST116") throw creatorError
+        creatorName = creator?.name
+      }
+
+      result.push({
+        ...announcement,
+        course_name: courseName,
+        creator_name: creatorName,
+      })
+    }
+
+    return result
   } catch (error) {
     console.error("Error fetching course announcements:", error)
     throw error
@@ -81,21 +164,76 @@ export async function getAnnouncementsForCourseOffering(courseOfferingId: string
 // Get announcements for a student
 export async function getAnnouncementsForStudent(studentId: string): Promise<Announcement[]> {
   try {
-    const result = await executeQuery(
-      `SELECT DISTINCT a.*, 
-                      c.name as course_name, 
-                      u.name as creator_name
-       FROM announcements a
-       JOIN course_offerings co ON a.course_offering_id = co.id
-       JOIN courses c ON co.course_id = c.id
-       JOIN users u ON a.created_by = u.id
-       JOIN enrollments e ON e.course_offering_id = co.id
-       WHERE e.student_id = $1
-       ORDER BY a.created_at DESC`,
-      [studentId],
-    )
+    // Get student's enrollments
+    const { data: enrollments, error: enrollmentsError } = await supabase
+      .from("enrollments")
+      .select("course_offering_id")
+      .eq("student_id", studentId)
 
-    return result.rows
+    if (enrollmentsError) throw enrollmentsError
+
+    if (!enrollments || enrollments.length === 0) {
+      return []
+    }
+
+    // Get course offering IDs
+    const courseOfferingIds = enrollments.map((e) => e.course_offering_id)
+
+    // Get announcements for these course offerings
+    const { data: announcements, error } = await supabase
+      .from("announcements")
+      .select("*")
+      .in("course_offering_id", courseOfferingIds)
+      .order("created_at", { ascending: false })
+
+    if (error) throw error
+
+    // Enhance with course and creator names
+    const result: Announcement[] = []
+
+    for (const announcement of announcements || []) {
+      // Get course name
+      const { data: offering, error: offeringError } = await supabase
+        .from("course_offerings")
+        .select("course_id")
+        .eq("id", announcement.course_offering_id)
+        .single()
+
+      if (offeringError && offeringError.code !== "PGRST116") throw offeringError
+
+      let courseName = null
+      if (offering) {
+        const { data: course, error: courseError } = await supabase
+          .from("courses")
+          .select("name")
+          .eq("id", offering.course_id)
+          .single()
+
+        if (courseError && courseError.code !== "PGRST116") throw courseError
+        courseName = course?.name
+      }
+
+      // Get creator name
+      let creatorName = null
+      if (announcement.created_by) {
+        const { data: creator, error: creatorError } = await supabase
+          .from("users")
+          .select("name")
+          .eq("id", announcement.created_by)
+          .single()
+
+        if (creatorError && creatorError.code !== "PGRST116") throw creatorError
+        creatorName = creator?.name
+      }
+
+      result.push({
+        ...announcement,
+        course_name: courseName,
+        creator_name: creatorName,
+      })
+    }
+
+    return result
   } catch (error) {
     console.error("Error fetching student announcements:", error)
     throw error
@@ -105,9 +243,10 @@ export async function getAnnouncementsForStudent(studentId: string): Promise<Ann
 // Delete announcement
 export async function deleteAnnouncement(id: string): Promise<boolean> {
   try {
-    const result = await executeQuery("DELETE FROM announcements WHERE id = $1 RETURNING id", [id])
+    const { error } = await supabase.from("announcements").delete().eq("id", id)
 
-    return result.rows.length > 0
+    if (error) throw error
+    return true
   } catch (error) {
     console.error("Error deleting announcement:", error)
     throw error

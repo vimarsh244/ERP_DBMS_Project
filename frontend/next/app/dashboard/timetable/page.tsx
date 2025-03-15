@@ -19,6 +19,8 @@ interface CourseSchedule {
   location: string
   professor_name: string
   color: string
+  room_number?: string
+  schedule_type?: string
 }
 
 export default function TimetablePage() {
@@ -31,12 +33,25 @@ export default function TimetablePage() {
   const [viewMode, setViewMode] = useState("week") // "week" or "list"
   const [loading, setLoading] = useState(true)
   const [schedules, setSchedules] = useState<CourseSchedule[]>([])
+  const [currentWeek, setCurrentWeek] = useState(0)
+  const [currentSemester, setCurrentSemester] = useState({ semester: "Spring", year: 2025 })
 
   useEffect(() => {
     if (!session?.user.id) return
 
     fetchTimetable()
+    fetchCurrentSemester()
   }, [session])
+
+  const fetchCurrentSemester = async () => {
+    try {
+      // In a real application, this would be fetched from the database
+      // For now, we'll use a hardcoded value
+      setCurrentSemester({ semester: "Spring", year: 2025 })
+    } catch (error) {
+      console.error("Error fetching current semester:", error)
+    }
+  }
 
   const fetchTimetable = async () => {
     if (!session?.user.id) return
@@ -76,6 +91,8 @@ export default function TimetablePage() {
               location: courseOffering.location || "TBA",
               professor_name: courseOffering.professor_name || "TBA",
               color,
+              room_number: schedule.room_number,
+              schedule_type: schedule.schedule_type,
             })
           }
         }
@@ -109,6 +126,26 @@ export default function TimetablePage() {
         timeSlots.indexOf(timeSlot) >= startTimeIndex &&
         timeSlots.indexOf(timeSlot) < endTimeIndex
       )
+    })
+  }
+
+  const handlePreviousWeek = () => {
+    setCurrentWeek(currentWeek - 1)
+  }
+
+  const handleNextWeek = () => {
+    setCurrentWeek(currentWeek + 1)
+  }
+
+  const handleCurrentWeek = () => {
+    setCurrentWeek(0)
+  }
+
+  const exportTimetable = () => {
+    // In a real application, this would generate a PDF or CSV file
+    toast({
+      title: "Export Started",
+      description: "Your timetable is being exported",
     })
   }
 
@@ -157,7 +194,8 @@ export default function TimetablePage() {
                           <div>
                             {cls.start_time.substring(0, 5)} - {cls.end_time.substring(0, 5)}
                           </div>
-                          <div>{cls.location}</div>
+                          <div>{cls.room_number || cls.location}</div>
+                          {cls.schedule_type && <div className="text-xs opacity-75">{cls.schedule_type}</div>}
                         </div>
                       )
                     }
@@ -207,8 +245,15 @@ export default function TimetablePage() {
                             {cls.start_time.substring(0, 5)} - {cls.end_time.substring(0, 5)}
                           </span>
                           <span>•</span>
-                          <span>{cls.location}</span>
+                          <span>{cls.room_number || cls.location}</span>
+                          {cls.schedule_type && (
+                            <>
+                              <span>•</span>
+                              <span>{cls.schedule_type}</span>
+                            </>
+                          )}
                         </div>
+                        <div className="text-sm text-muted-foreground">Instructor: {cls.professor_name}</div>
                       </div>
                     </div>
                     <Badge className={cls.color}>{cls.course_id}</Badge>
@@ -226,21 +271,23 @@ export default function TimetablePage() {
       <div className="flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Timetable</h1>
-          <p className="text-sm text-muted-foreground">View your class schedule for the semester</p>
+          <p className="text-sm text-muted-foreground">
+            View your class schedule for {currentSemester.semester} {currentSemester.year}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center">
-            <Button variant="outline" size="icon" className="rounded-r-none">
+            <Button variant="outline" size="icon" className="rounded-r-none" onClick={handlePreviousWeek}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="outline" className="rounded-none border-x-0">
-              Current Week
+            <Button variant="outline" className="rounded-none border-x-0" onClick={handleCurrentWeek}>
+              {currentWeek === 0 ? "Current Week" : currentWeek < 0 ? `Week ${-currentWeek}` : `Week +${currentWeek}`}
             </Button>
-            <Button variant="outline" size="icon" className="rounded-l-none">
+            <Button variant="outline" size="icon" className="rounded-l-none" onClick={handleNextWeek}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          <Button className="gap-2" variant="outline">
+          <Button className="gap-2" variant="outline" onClick={exportTimetable}>
             <Download className="h-4 w-4" />
             Export
           </Button>
@@ -250,8 +297,12 @@ export default function TimetablePage() {
       <Card>
         <CardHeader className="flex flex-row items-center pb-2">
           <div className="flex-1">
-            <CardTitle>Academic Year 2024-2025</CardTitle>
-            <CardDescription>Spring Semester</CardDescription>
+            <CardTitle>
+              {currentSemester.semester} {currentSemester.year}
+            </CardTitle>
+            <CardDescription>
+              {currentWeek === 0 ? "Current Week" : currentWeek < 0 ? `Week ${-currentWeek}` : `Week +${currentWeek}`}
+            </CardDescription>
           </div>
           <div className="flex gap-2">
             <Button variant={viewMode === "week" ? "default" : "outline"} size="sm" onClick={() => setViewMode("week")}>

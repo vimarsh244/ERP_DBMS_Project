@@ -17,8 +17,8 @@ import {
   checkPrerequisites,
   checkTimeConflicts,
   checkCreditLimit,
+  getEnrollmentsForStudent,
 } from "@/lib/course-service"
-import { getEnrollmentsForStudent } from "@/lib/course-service"
 
 export default function StudentCoursesPage() {
   const { data: session } = useSession()
@@ -31,12 +31,14 @@ export default function StudentCoursesPage() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [currentSemester, setCurrentSemester] = useState({ semester: "Spring", year: 2025 })
 
   useEffect(() => {
-    if (!session) return
+    if (!session?.user?.id) return
 
     fetchCourses()
     fetchEnrollments()
+    fetchCurrentSemester()
   }, [session])
 
   useEffect(() => {
@@ -45,12 +47,28 @@ export default function StudentCoursesPage() {
     }
   }, [searchQuery, courses, enrolledCourses])
 
+  const fetchCurrentSemester = async () => {
+    try {
+      // In a real application, this would be fetched from the database
+      // For now, we'll use a hardcoded value
+      setCurrentSemester({ semester: "Spring", year: 2025 })
+    } catch (error) {
+      console.error("Error fetching current semester:", error)
+    }
+  }
+
   const fetchCourses = async () => {
     try {
       setLoading(true)
       const allCourses = await getAllCourseOfferings()
-      setCourses(allCourses)
-      setFilteredCourses(allCourses)
+
+      // Filter courses for the current semester
+      const currentCourses = allCourses.filter(
+        (course) => course.semester === currentSemester.semester && course.year === currentSemester.year,
+      )
+
+      setCourses(currentCourses)
+      setFilteredCourses(currentCourses)
     } catch (error) {
       console.error("Error fetching courses:", error)
       toast({
@@ -210,7 +228,9 @@ export default function StudentCoursesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Course Registration</h1>
-          <p className="text-sm text-muted-foreground">Browse and register for courses</p>
+          <p className="text-sm text-muted-foreground">
+            Browse and register for courses - {currentSemester.semester} {currentSemester.year}
+          </p>
         </div>
       </div>
 
@@ -241,7 +261,6 @@ export default function StudentCoursesPage() {
                   <TableHead>Course Name</TableHead>
                   <TableHead>Department</TableHead>
                   <TableHead>Credits</TableHead>
-                  <TableHead>Semester</TableHead>
                   <TableHead>Schedule</TableHead>
                   <TableHead>Instructor</TableHead>
                   <TableHead>Status</TableHead>
@@ -258,9 +277,6 @@ export default function StudentCoursesPage() {
                       <TableCell>{course.course_name}</TableCell>
                       <TableCell>{course.department}</TableCell>
                       <TableCell>{course.credits}</TableCell>
-                      <TableCell>
-                        {course.semester} {course.year}
-                      </TableCell>
                       <TableCell>{formatSchedule(course)}</TableCell>
                       <TableCell>{course.professor_name || "TBA"}</TableCell>
                       <TableCell>
@@ -296,7 +312,7 @@ export default function StudentCoursesPage() {
                             size="sm"
                             className="ml-2"
                             onClick={() => handleEnroll(course.id)}
-                            disabled={actionLoading === course.id}
+                            disabled={actionLoading === course.id || !course.registration_open}
                           >
                             {actionLoading === course.id ? "Processing..." : "Enroll"}
                           </Button>

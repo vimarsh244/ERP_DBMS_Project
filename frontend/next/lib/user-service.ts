@@ -1,24 +1,17 @@
-import { executeQuery } from "@/lib/db"
+import supabase from "./supabase"
+import type { Database } from "./database.types"
 
-export interface User {
-  id: string
-  name: string
-  email: string
-  role: string
-  student_id?: string
-  branch?: string
-  graduating_year?: number
-  created_at: string
-  updated_at: string
-}
+export type User = Database["public"]["Tables"]["users"]["Row"]
+export type UserInsert = Database["public"]["Tables"]["users"]["Insert"]
+export type UserUpdate = Database["public"]["Tables"]["users"]["Update"]
 
 // Get all users
 export async function getAllUsers(): Promise<User[]> {
   try {
-    const result = await executeQuery(
-      "SELECT id, name, email, role, student_id, branch, graduating_year, created_at, updated_at FROM users ORDER BY created_at DESC",
-    )
-    return result.rows
+    const { data, error } = await supabase.from("users").select("*").order("created_at", { ascending: false })
+
+    if (error) throw error
+    return data || []
   } catch (error) {
     console.error("Error fetching users:", error)
     throw error
@@ -28,91 +21,72 @@ export async function getAllUsers(): Promise<User[]> {
 // Get user by ID
 export async function getUserById(id: string): Promise<User | null> {
   try {
-    const result = await executeQuery(
-      "SELECT id, name, email, role, student_id, branch, graduating_year, created_at, updated_at FROM users WHERE id = $1",
-      [id],
-    )
+    const { data, error } = await supabase.from("users").select("*").eq("id", id).single()
 
-    if (result.rows.length === 0) {
-      return null
+    if (error) {
+      if (error.code === "PGRST116") return null // No rows returned
+      throw error
     }
 
-    return result.rows[0]
+    return data
   } catch (error) {
     console.error("Error fetching user:", error)
     throw error
   }
 }
 
-// Update user
-export async function updateUser(
-  id: string,
-  data: {
-    name?: string
-    email?: string
-    role?: string
-    student_id?: string
-    branch?: string
-    graduating_year?: number
-  },
-): Promise<User | null> {
+// Get user by email
+export async function getUserByEmail(email: string): Promise<User | null> {
   try {
-    // Build the SET part of the query dynamically based on provided fields
-    const updates: string[] = []
-    const values: any[] = []
-    let paramIndex = 1
+    const { data, error } = await supabase.from("users").select("*").eq("email", email).single()
 
-    if (data.name !== undefined) {
-      updates.push(`name = $${paramIndex++}`)
-      values.push(data.name)
+    if (error) {
+      if (error.code === "PGRST116") return null // No rows returned
+      throw error
     }
 
-    if (data.email !== undefined) {
-      updates.push(`email = $${paramIndex++}`)
-      values.push(data.email)
+    return data
+  } catch (error) {
+    console.error("Error fetching user by email:", error)
+    throw error
+  }
+}
+
+// Update user
+export async function updateUser(id: string, data: UserUpdate): Promise<User | null> {
+  try {
+    // Add updated_at timestamp
+    const updateData = {
+      ...data,
+      updated_at: new Date().toISOString(),
     }
 
-    if (data.role !== undefined) {
-      updates.push(`role = $${paramIndex++}`)
-      values.push(data.role)
-    }
+    const { data: updatedUser, error } = await supabase.from("users").update(updateData).eq("id", id).select().single()
 
-    if (data.student_id !== undefined) {
-      updates.push(`student_id = $${paramIndex++}`)
-      values.push(data.student_id)
-    }
-
-    if (data.branch !== undefined) {
-      updates.push(`branch = $${paramIndex++}`)
-      values.push(data.branch)
-    }
-
-    if (data.graduating_year !== undefined) {
-      updates.push(`graduating_year = $${paramIndex++}`)
-      values.push(data.graduating_year)
-    }
-
-    updates.push(`updated_at = CURRENT_TIMESTAMP`)
-
-    // Add the user ID as the last parameter
-    values.push(id)
-
-    const query = `
-      UPDATE users 
-      SET ${updates.join(", ")} 
-      WHERE id = $${paramIndex} 
-      RETURNING id, name, email, role, student_id, branch, graduating_year, created_at, updated_at
-    `
-
-    const result = await executeQuery(query, values)
-
-    if (result.rows.length === 0) {
-      return null
-    }
-
-    return result.rows[0]
+    if (error) throw error
+    return updatedUser
   } catch (error) {
     console.error("Error updating user:", error)
+    throw error
+  }
+}
+
+// Create user
+export async function createUser(data: UserInsert): Promise<User> {
+  try {
+    // Add timestamps
+    const insertData = {
+      ...data,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+
+    const { data: newUser, error } = await supabase.from("users").insert(insertData).select().single()
+
+    if (error) throw error
+    return newUser
+  } catch (error) {
+    console.error("Error creating user:", error)
     throw error
   }
 }
@@ -120,9 +94,10 @@ export async function updateUser(
 // Delete user
 export async function deleteUser(id: string): Promise<boolean> {
   try {
-    const result = await executeQuery("DELETE FROM users WHERE id = $1 RETURNING id", [id])
+    const { error } = await supabase.from("users").delete().eq("id", id)
 
-    return result.rows.length > 0
+    if (error) throw error
+    return true
   } catch (error) {
     console.error("Error deleting user:", error)
     throw error
@@ -132,14 +107,71 @@ export async function deleteUser(id: string): Promise<boolean> {
 // Get users by role
 export async function getUsersByRole(role: string): Promise<User[]> {
   try {
-    const result = await executeQuery(
-      "SELECT id, name, email, role, student_id, branch, graduating_year, created_at, updated_at FROM users WHERE role = $1 ORDER BY name",
-      [role],
-    )
+    const { data, error } = await supabase.from("users").select("*").eq("role", role).order("name")
 
-    return result.rows
+    if (error) throw error
+    return data || []
   } catch (error) {
     console.error(`Error fetching ${role}s:`, error)
+    throw error
+  }
+}
+
+// Get user statistics
+export async function getUserStatistics(): Promise<{
+  totalUsers: number
+  studentCount: number
+  professorCount: number
+  adminCount: number
+  recentUsers: User[]
+}> {
+  try {
+    // Get counts
+    const { count: totalCount, error: totalError } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+
+    if (totalError) throw totalError
+
+    const { count: studentCount, error: studentError } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "student")
+
+    if (studentError) throw studentError
+
+    const { count: professorCount, error: professorError } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "professor")
+
+    if (professorError) throw professorError
+
+    const { count: adminCount, error: adminError } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "admin")
+
+    if (adminError) throw adminError
+
+    // Get recent users
+    const { data: recentUsers, error: recentError } = await supabase
+      .from("users")
+      .select("id, name, email, role, student_id, branch, graduating_year, profile_picture_url, created_at")
+      .order("created_at", { ascending: false })
+      .limit(5)
+
+    if (recentError) throw recentError
+
+    return {
+      totalUsers: totalCount || 0,
+      studentCount: studentCount || 0,
+      professorCount: professorCount || 0,
+      adminCount: adminCount || 0,
+      recentUsers: recentUsers || [],
+    }
+  } catch (error) {
+    console.error("Error fetching user statistics:", error)
     throw error
   }
 }
