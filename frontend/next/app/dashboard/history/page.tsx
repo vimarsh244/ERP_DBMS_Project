@@ -1,84 +1,104 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle, DownloadCloud, FileBarChart } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { getCourseHistoryForStudent, calculateGPA, gradePoints } from "@/lib/course-service"
 
 export default function CourseHistoryPage() {
-  // This would be fetched from your database in a real application
-  const courseHistory = [
-    {
-      id: "CS101",
-      name: "Introduction to Programming",
-      semester: "Fall 2023",
-      credits: 4,
-      grade: "A",
-      instructor: "Dr. Rajeev Kumar",
-    },
-    {
-      id: "MATH101",
-      name: "Calculus I",
-      semester: "Fall 2023",
-      credits: 4,
-      grade: "A-",
-      instructor: "Dr. Ramesh Iyer",
-    },
-    {
-      id: "PHY101",
-      name: "Physics for Engineers",
-      semester: "Fall 2023",
-      credits: 4,
-      grade: "B+",
-      instructor: "Dr. Amit Verma",
-    },
-    {
-      id: "CS201",
-      name: "Data Structures and Algorithms",
-      semester: "Spring 2024",
-      credits: 4,
-      grade: "In Progress",
-      instructor: "Dr. Sanjay Gupta",
-    },
-    {
-      id: "MATH201",
-      name: "Calculus II",
-      semester: "Spring 2024",
-      credits: 4,
-      grade: "In Progress",
-      instructor: "Dr. Priya Sharma",
-    },
-  ]
+  const { data: session } = useSession()
+  const { toast } = useToast()
 
-  // Calculate GPA
-  const getGradePoints = (grade) => {
-    const gradeMap = {
-      "A+": 4.0,
-      A: 4.0,
-      "A-": 3.7,
-      "B+": 3.3,
-      B: 3.0,
-      "B-": 2.7,
-      "C+": 2.3,
-      C: 2.0,
-      "C-": 1.7,
-      "D+": 1.3,
-      D: 1.0,
-      "D-": 0.7,
-      F: 0.0,
+  const [courseHistory, setCourseHistory] = useState<any[]>([])
+  const [gpaData, setGpaData] = useState<{
+    gpa: number
+    totalCredits: number
+    completedCourses: number
+  }>({
+    gpa: 0,
+    totalCredits: 0,
+    completedCourses: 0,
+  })
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (session?.user?.id) {
+      fetchCourseHistory()
+      fetchGPA()
     }
-    return gradeMap[grade] || 0
+  }, [session])
+
+  const fetchCourseHistory = async () => {
+    try {
+      setLoading(true)
+      const data = await getCourseHistoryForStudent(session!.user.id)
+      setCourseHistory(data)
+    } catch (error) {
+      console.error("Error fetching course history:", error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch course history",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const completedCourses = courseHistory.filter((course) => course.grade !== "In Progress")
-  const totalCredits = completedCourses.reduce((sum, course) => sum + course.credits, 0)
-  const totalGradePoints = completedCourses.reduce(
-    (sum, course) => sum + getGradePoints(course.grade) * course.credits,
-    0,
-  )
-  const gpa = totalGradePoints / totalCredits
+  const fetchGPA = async () => {
+    try {
+      const data = await calculateGPA(session!.user.id)
+      setGpaData(data)
+    } catch (error) {
+      console.error("Error calculating GPA:", error)
+      toast({
+        title: "Error",
+        description: "Failed to calculate GPA",
+        variant: "destructive",
+      })
+    }
+  }
 
   // Group courses by semester
-  const semesters = Array.from(new Set(courseHistory.map((course) => course.semester)))
+  const groupedCourses = courseHistory.reduce(
+    (acc, course) => {
+      const semesterKey = `${course.semester} ${course.year}`
+      if (!acc[semesterKey]) {
+        acc[semesterKey] = []
+      }
+      acc[semesterKey].push(course)
+      return acc
+    },
+    {} as Record<string, any[]>,
+  )
+
+  // Sort semesters by year and semester
+  const semesterOrder = { Spring: 0, Summer: 1, Fall: 2, Winter: 3 }
+  const sortedSemesters = Object.keys(groupedCourses).sort((a, b) => {
+    const [semA, yearA] = a.split(" ")
+    const [semB, yearB] = b.split(" ")
+    if (yearA !== yearB) {
+      return Number(yearB) - Number(yearA) // Most recent year first
+    }
+    return semesterOrder[semA as keyof typeof semesterOrder] - semesterOrder[semB as keyof typeof semesterOrder]
+  })
+
+  const getGradeColor = (grade: string) => {
+    if (!grade || grade === "In Progress") return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
+
+    const gradePoint = gradePoints[grade] || 0
+
+    if (gradePoint >= 9) return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+    if (gradePoint >= 7) return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
+    if (gradePoint >= 4) return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
+    if (gradePoint >= 1) return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300"
+    return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+  }
 
   return (
     <div className="flex flex-col gap-4 p-4 md:gap-8 md:p-8">
@@ -106,8 +126,8 @@ export default function CourseHistoryPage() {
             <CardDescription>Current cumulative GPA</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{gpa.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">Total Credits: {totalCredits}</p>
+            <div className="text-3xl font-bold">{gpaData.gpa.toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground">Total Credits: {gpaData.totalCredits}</p>
           </CardContent>
         </Card>
         <Card>
@@ -116,7 +136,7 @@ export default function CourseHistoryPage() {
             <CardDescription>Total courses completed</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{completedCourses.length}</div>
+            <div className="text-3xl font-bold">{gpaData.completedCourses}</div>
             <p className="text-xs text-muted-foreground">Out of {courseHistory.length} enrolled</p>
           </CardContent>
         </Card>
@@ -127,65 +147,71 @@ export default function CourseHistoryPage() {
           </CardHeader>
           <CardContent className="flex items-center gap-2">
             <CheckCircle className="h-5 w-5 text-green-600" />
-            <span className="text-lg font-medium">Good Standing</span>
+            <span className="text-lg font-medium">
+              {gpaData.gpa >= 8
+                ? "Excellent"
+                : gpaData.gpa >= 6
+                  ? "Good Standing"
+                  : gpaData.gpa >= 4
+                    ? "Satisfactory"
+                    : "Needs Improvement"}
+            </span>
           </CardContent>
         </Card>
       </div>
 
-      {semesters.map((semester) => (
-        <Card key={semester}>
-          <CardHeader>
-            <CardTitle>{semester}</CardTitle>
-            <CardDescription>Courses taken in {semester}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Course Code</TableHead>
-                  <TableHead>Course Name</TableHead>
-                  <TableHead>Credits</TableHead>
-                  <TableHead>Instructor</TableHead>
-                  <TableHead>Grade</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {courseHistory
-                  .filter((course) => course.semester === semester)
-                  .map((course) => (
-                    <TableRow key={course.id}>
-                      <TableCell className="font-medium">{course.id}</TableCell>
-                      <TableCell>{course.name}</TableCell>
+      {loading ? (
+        <div className="flex justify-center p-4">Loading course history...</div>
+      ) : courseHistory.length === 0 ? (
+        <Card>
+          <CardContent className="flex justify-center p-6">
+            <p className="text-muted-foreground">No course history available</p>
+          </CardContent>
+        </Card>
+      ) : (
+        sortedSemesters.map((semester) => (
+          <Card key={semester}>
+            <CardHeader>
+              <CardTitle>{semester}</CardTitle>
+              <CardDescription>Courses taken in {semester}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Course Code</TableHead>
+                    <TableHead>Course Name</TableHead>
+                    <TableHead>Credits</TableHead>
+                    <TableHead>Instructor</TableHead>
+                    <TableHead>Grade</TableHead>
+                    <TableHead>Points</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {groupedCourses[semester].map((course) => (
+                    <TableRow key={course.course_offering_id}>
+                      <TableCell className="font-medium">{course.course_code}</TableCell>
+                      <TableCell>{course.course_name}</TableCell>
                       <TableCell>{course.credits}</TableCell>
-                      <TableCell>{course.instructor}</TableCell>
+                      <TableCell>{course.instructor_name || "TBA"}</TableCell>
                       <TableCell>
-                        {course.grade === "In Progress" ? (
+                        {course.status === "enrolled" ? (
                           <Badge variant="outline">In Progress</Badge>
                         ) : (
-                          <Badge
-                            className={
-                              course.grade.startsWith("A")
-                                ? "bg-green-100 text-green-800"
-                                : course.grade.startsWith("B")
-                                  ? "bg-blue-100 text-blue-800"
-                                  : course.grade.startsWith("C")
-                                    ? "bg-yellow-100 text-yellow-800"
-                                    : course.grade.startsWith("D")
-                                      ? "bg-orange-100 text-orange-800"
-                                      : "bg-red-100 text-red-800"
-                            }
-                          >
-                            {course.grade}
-                          </Badge>
+                          <Badge className={getGradeColor(course.grade)}>{course.grade || "Not Graded"}</Badge>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        {course.grade && course.status === "completed" ? gradePoints[course.grade] || 0 : "-"}
                       </TableCell>
                     </TableRow>
                   ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        ))
+      )}
     </div>
   )
 }

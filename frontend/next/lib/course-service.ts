@@ -69,6 +69,38 @@ export interface Enrollment {
   updated_at: string
   student_name?: string
   course_name?: string
+  credits?: number
+  course_offering?: CourseOffering
+}
+
+// Grade conversion system
+export const gradePoints = {
+  A: 10,
+  "A-": 9,
+  "B+": 8,
+  B: 7,
+  "B-": 6,
+  "C+": 5,
+  C: 4,
+  "C-": 3,
+  D: 2,
+  E: 1,
+  NC: 0,
+  F: 0,
+}
+
+export const pointToGrade = (points: number): string => {
+  if (points >= 10) return "A"
+  if (points >= 9) return "A-"
+  if (points >= 8) return "B+"
+  if (points >= 7) return "B"
+  if (points >= 6) return "B-"
+  if (points >= 5) return "C+"
+  if (points >= 4) return "C"
+  if (points >= 3) return "C-"
+  if (points >= 2) return "D"
+  if (points >= 1) return "E"
+  return "NC"
 }
 
 /**
@@ -588,16 +620,27 @@ export async function getEnrollmentsForStudent(studentId: string): Promise<Enrol
     const result = await executeQuery(
       `SELECT e.*, 
               c.name as course_name,
-              c.credits
+              c.credits,
+              co.id as course_offering_id,
+              co.semester,
+              co.year
        FROM enrollments e
        JOIN course_offerings co ON e.course_offering_id = co.id
        JOIN courses c ON co.course_id = c.id
        WHERE e.student_id = $1
-       ORDER BY e.created_at DESC`,
+       ORDER BY co.year DESC, co.semester, e.created_at DESC`,
       [studentId],
     )
 
-    return result.rows
+    const enrollments = result.rows
+
+    // Get course offering details for each enrollment
+    for (const enrollment of enrollments) {
+      const offering = await getCourseOfferingById(enrollment.course_offering_id)
+      enrollment.course_offering = offering
+    }
+
+    return enrollments
   } catch (error) {
     console.error("Error fetching student enrollments:", error)
     throw error
@@ -609,7 +652,8 @@ export async function getEnrollmentsForCourseOffering(courseOfferingId: string):
   try {
     const result = await executeQuery(
       `SELECT e.*, 
-              u.name as student_name
+              u.name as student_name,
+              u.student_id as student_id_number
        FROM enrollments e
        JOIN users u ON e.student_id = u.id
        WHERE e.course_offering_id = $1
@@ -620,6 +664,85 @@ export async function getEnrollmentsForCourseOffering(courseOfferingId: string):
     return result.rows
   } catch (error) {
     console.error("Error fetching course enrollments:", error)
+    throw error
+  }
+}
+
+// Update student grade
+export async function updateStudentGrade(
+  studentId: string,
+  courseOfferingId: string,
+  data: {
+    grade?: string | null
+    midterm_grade?: string | null
+    final_grade?: string | null
+    attendance_percentage?: number | null
+    assignment_scores?: any | null
+    feedback?: string | null
+    status?: string
+  },
+): Promise<Enrollment | null> {
+  try {
+    const updates: string[] = []
+    const values: any[] = []
+    let paramIndex = 1
+
+    if (data.grade !== undefined) {
+      updates.push(`grade = $${paramIndex++}`)
+      values.push(data.grade)
+    }
+
+    if (data.midterm_grade !== undefined) {
+      updates.push(`midterm_grade = $${paramIndex++}`)
+      values.push(data.midterm_grade)
+    }
+
+    if (data.final_grade !== undefined) {
+      updates.push(`final_grade = $${paramIndex++}`)
+      values.push(data.final_grade)
+    }
+
+    if (data.attendance_percentage !== undefined) {
+      updates.push(`attendance_percentage = $${paramIndex++}`)
+      values.push(data.attendance_percentage)
+    }
+
+    if (data.assignment_scores !== undefined) {
+      updates.push(`assignment_scores = $${paramIndex++}`)
+      values.push(data.assignment_scores)
+    }
+
+    if (data.feedback !== undefined) {
+      updates.push(`feedback = $${paramIndex++}`)
+      values.push(data.feedback)
+    }
+
+    if (data.status !== undefined) {
+      updates.push(`status = $${paramIndex++}`)
+      values.push(data.status)
+    }
+
+    updates.push(`updated_at = CURRENT_TIMESTAMP`)
+
+    values.push(studentId)
+    values.push(courseOfferingId)
+
+    const query = `
+      UPDATE enrollments 
+      SET ${updates.join(", ")} 
+      WHERE student_id = $${paramIndex++} AND course_offering_id = $${paramIndex} 
+      RETURNING *
+    `
+
+    const result = await executeQuery(query, values)
+
+    if (result.rows.length === 0) {
+      return null
+    }
+
+    return result.rows[0]
+  } catch (error) {
+    console.error("Error updating student grade:", error)
     throw error
   }
 }
@@ -657,7 +780,7 @@ export async function checkPrerequisites(
        FROM enrollments e
        JOIN course_offerings co ON e.course_offering_id = co.id
        JOIN courses c ON co.course_id = c.id
-       WHERE e.student_id = $1 AND e.status = 'completed' AND (e.grade IS NULL OR e.grade NOT IN ('F', 'D-', 'D'))`,
+       WHERE e.student_id = $1 AND e.status = 'completed' AND (e.grade IS NULL OR e.grade NOT IN ('F', 'NC'))`,
       [studentId],
     )
 
@@ -812,6 +935,74 @@ export async function checkCreditLimit(
     }
   } catch (error) {
     console.error("Error checking credit limit:", error)
+    throw error
+  }
+}
+
+// Calculate GPA for a student
+export async function calculateGPA(studentId: string): Promise<{
+  gpa: number
+  totalCredits: number
+  completedCourses: number
+}> {
+  try {
+    const result = await executeQuery(
+      `SELECT e.grade, c.credits
+       FROM enrollments e
+       JOIN course_offerings co ON e.course_offering_id = co.id
+       JOIN courses c ON co.course_id = c.id
+       WHERE e.student_id = $1 AND e.status = 'completed' AND e.grade IS NOT NULL`,
+      [studentId],
+    )
+
+    const completedCourses = result.rows
+    let totalCredits = 0
+    let totalGradePoints = 0
+
+    for (const course of completedCourses) {
+      const credits = Number(course.credits)
+      const gradePoint = gradePoints[course.grade] || 0
+
+      totalCredits += credits
+      totalGradePoints += gradePoint * credits
+    }
+
+    const gpa = totalCredits > 0 ? totalGradePoints / totalCredits : 0
+
+    return {
+      gpa,
+      totalCredits,
+      completedCourses: completedCourses.length,
+    }
+  } catch (error) {
+    console.error("Error calculating GPA:", error)
+    throw error
+  }
+}
+
+// Get course history for a student
+export async function getCourseHistoryForStudent(studentId: string): Promise<any[]> {
+  try {
+    const result = await executeQuery(
+      `SELECT e.*,
+              c.id as course_code,
+              c.name as course_name,
+              c.credits,
+              co.semester,
+              co.year,
+              u.name as instructor_name
+       FROM enrollments e
+       JOIN course_offerings co ON e.course_offering_id = co.id
+       JOIN courses c ON co.course_id = c.id
+       LEFT JOIN users u ON co.professor_id = u.id
+       WHERE e.student_id = $1
+       ORDER BY co.year DESC, co.semester DESC`,
+      [studentId],
+    )
+
+    return result.rows
+  } catch (error) {
+    console.error("Error fetching course history:", error)
     throw error
   }
 }

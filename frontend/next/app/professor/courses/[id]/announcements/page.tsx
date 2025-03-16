@@ -33,17 +33,25 @@ export default function CourseAnnouncementsPage({ params }: { params: { id: stri
     content: "",
   })
   const [submitting, setSubmitting] = useState(false)
+  const [unwrappedParams, setUnwrappedParams] = useState<any>(null);
 
+  useEffect(() => {
+    (async () => {
+      const result = await params;
+      setUnwrappedParams(result);
+    })();
+  }, [params]);
+  
   useEffect(() => {
     // Redirect if not professor or admin
     if (session && session.user.role !== "professor" && session.user.role !== "admin") {
-      router.push("/dashboard")
-      return
+      router.push("/dashboard");
+      return;
     }
-
-    fetchCourseOffering()
-    fetchAnnouncements()
-  }, [session, router, params.id])
+  
+    fetchCourseOffering();
+    fetchAnnouncements();
+  }, [session, router, unwrappedParams?.id]);
 
   const fetchCourseOffering = async () => {
     try {
