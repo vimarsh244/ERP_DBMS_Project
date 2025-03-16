@@ -2,7 +2,6 @@ import type { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import GoogleProvider from "next-auth/providers/google"
 import { compare, hash } from "bcryptjs"
-import supabase from "./supabase"
 import { getUserByEmail } from "./user-service"
 import { createUser as createUserFn } from "./user-service"
 
@@ -177,32 +176,6 @@ export async function createUserWithAuth({
     }
   } catch (error) {
     console.error("Error creating user:", error)
-    throw error
-  }
-}
-
-// Helper function to update a user's role
-export async function updateUserRole(userId: string, role: string) {
-  try {
-    const { data, error } = await supabase
-      .from("users")
-      .update({
-        role,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", userId)
-      .select()
-      .single()
-
-    if (error) throw error
-
-    if (!data) {
-      throw new Error("User not found")
-    }
-
-    return data
-  } catch (error) {
-    console.error("Error updating user role:", error)
     throw error
   }
 }
