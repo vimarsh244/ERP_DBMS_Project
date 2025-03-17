@@ -73,33 +73,45 @@ export interface Enrollment {
   course_offering?: CourseOffering
 }
 
+export interface Announcement {
+  id: string
+  title: string
+  content: string
+  course_offering_id: string
+  created_by: string | null
+  priority: string | null
+  attachment_urls: string[] | null
+  visible_from: string
+  visible_until: string | null
+  is_pinned: boolean | null
+  created_at: string
+  updated_at: string
+  course_name?: string
+  creator_name?: string
+}
+
 // Grade conversion system
 export const gradePoints = {
   A: 10,
   "A-": 9,
-  "B+": 8,
-  B: 7,
-  "B-": 6,
-  "C+": 5,
-  C: 4,
-  "C-": 3,
-  D: 2,
-  E: 1,
+  B: 8,
+  "B-": 7,
+  C: 6,
+  "C-": 5,
+  D: 4,
+  E: 2,
   NC: 0,
   F: 0,
 }
-
 export const pointToGrade = (points: number): string => {
   if (points >= 10) return "A"
   if (points >= 9) return "A-"
-  if (points >= 8) return "B+"
-  if (points >= 7) return "B"
-  if (points >= 6) return "B-"
-  if (points >= 5) return "C+"
-  if (points >= 4) return "C"
-  if (points >= 3) return "C-"
-  if (points >= 2) return "D"
-  if (points >= 1) return "E"
+  if (points >= 8) return "B"
+  if (points >= 7) return "B-"
+  if (points >= 6) return "C"
+  if (points >= 5) return "C-"
+  if (points >= 4) return "D"
+  if (points >= 2) return "E"
   return "NC"
 }
 

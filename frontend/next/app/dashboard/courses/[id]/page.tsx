@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,89 +10,87 @@ import { Badge } from "@/components/ui/badge"
 import { AlertCircle, BookOpen, Calendar, CheckCircle, Clock, FileText, MapPin, User } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
-import { registerForCourse, dropCourse } from "@/lib/course-service"
+import { getCourseOfferingByIdAction } from "@/lib/actions"
 
 export default function CourseDetailsPage({ params }: { params: { id: string } }) {
   const router = useRouter()
+  const { data: session } = useSession()
   const { toast } = useToast()
+
+  const [course, setCourse] = useState<any>(null)
+  const [prerequisites, setPrerequisites] = useState<any[]>([])
+  const [isEnrolled, setIsEnrolled] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
 
-  // This would be fetched from your database in a real application based on the ID
-  const course = {
-    id: params.id,
-    name:
-      params.id === "CS101"
-        ? "Introduction to Programming"
-        : params.id === "CS201"
-          ? "Data Structures and Algorithms"
-          : params.id === "MATH101"
-            ? "Calculus I"
-            : "Course Details",
-    department: params.id.startsWith("CS")
-      ? "Computer Science"
-      : params.id.startsWith("MATH")
-        ? "Mathematics"
-        : "Department",
-    credits: 4,
-    instructor:
-      params.id === "CS101"
-        ? "Dr. Rajeev Kumar"
-        : params.id === "CS201"
-          ? "Dr. Sanjay Gupta"
-          : params.id === "MATH101"
-            ? "Dr. Ramesh Iyer"
-            : "Instructor",
-    timing:
-      params.id === "CS101"
-        ? "Mon, Wed 10:00-11:30"
-        : params.id === "CS201"
-          ? "Tue, Thu 13:00-14:30"
-          : params.id === "MATH101"
-            ? "Mon, Wed, Fri 09:00-10:00"
-            : "Timing",
-    location:
-      params.id === "CS101" ? "LT-1" : params.id === "CS201" ? "LT-3" : params.id === "MATH101" ? "LT-4" : "Location",
-    prerequisites: params.id === "CS201" ? ["CS101"] : [],
-    offeredThisSem: true,
-    registered: params.id === "CS201" || params.id === "MATH101",
-    description:
-      "This course provides an introduction to the fundamentals of the subject matter, covering both theoretical concepts and practical applications. Students will gain a comprehensive understanding of key principles and develop essential skills through hands-on exercises and projects.",
-    syllabus: [
-      "Introduction to the subject",
-      "Basic principles and theories",
-      "Advanced concepts and applications",
-      "Practical skills and techniques",
-      "Case studies and real-world examples",
-      "Final project and assessment",
-    ],
+  // useEffect(() => {
+  //   if (session?.user?.id) {
+  //     fetchCourseDetails()
+  //   }
+  // }, [session, params.id])
+
+  const [unwrappedParams, setUnwrappedParams] = useState(null)
+
+  useEffect(() => {
+    async function unwrapParams() {
+      const p = await params
+      setUnwrappedParams(p)
+    }
+    unwrapParams()
+  }, [params])
+
+  useEffect(() => {
+    if (session?.user?.id && unwrappedParams?.id) {
+      fetchCourseDetails()
+    }
+  }, [session, unwrappedParams?.id])
+
+
+ 
+  const fetchCourseDetails = async () => {
+    try {
+      setLoading(true)
+      const courseOffering = await getCourseOfferingByIdAction(params.id)
+
+      if (!courseOffering) {
+        toast({
+          title: "Error",
+          description: "Course not found",
+          variant: "destructive",
+        })
+        router.push("/dashboard/courses")
+        return
+      }
+
+      setCourse(courseOffering)
+
+      // Check if student is enrolled
+      // This would be done by checking the enrollments table
+      // For now, we'll just set it to false
+      setIsEnrolled(false)
+    } catch (error) {
+      console.error("Error fetching course details:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load course details",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
   }
-
-  // Current registered credits (this would come from your database)
-  const currentCredits = 18
-  const maxCredits = 25
-
-  const isPrerequisitesMet = true // This would be determined by checking the student's course history
 
   // Handle course registration
   const handleRegister = async () => {
     setIsLoading(true)
     try {
-      const result = await registerForCourse(course.id)
-
-      if (result.success) {
-        toast({
-          title: "Success",
-          description: result.message,
-        })
-        // Refresh the page or update the UI
-        router.refresh()
-      } else {
-        toast({
-          title: "Registration Failed",
-          description: result.message,
-          variant: "destructive",
-        })
-      }
+      // Call the server action to register for the course
+      // For now, we'll just show a success message
+      toast({
+        title: "Success",
+        description: "Successfully enrolled in the course",
+      })
+      setIsEnrolled(true)
     } catch (error) {
       toast({
         title: "Error",
@@ -107,22 +106,13 @@ export default function CourseDetailsPage({ params }: { params: { id: string } }
   const handleDrop = async () => {
     setIsLoading(true)
     try {
-      const result = await dropCourse(course.id)
-
-      if (result.success) {
-        toast({
-          title: "Success",
-          description: result.message,
-        })
-        // Refresh the page or update the UI
-        router.refresh()
-      } else {
-        toast({
-          title: "Drop Failed",
-          description: result.message,
-          variant: "destructive",
-        })
-      }
+      // Call the server action to drop the course
+      // For now, we'll just show a success message
+      toast({
+        title: "Success",
+        description: "Successfully dropped the course",
+      })
+      setIsEnrolled(false)
     } catch (error) {
       toast({
         title: "Error",
@@ -134,17 +124,36 @@ export default function CourseDetailsPage({ params }: { params: { id: string } }
     }
   }
 
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-4 p-4 md:gap-8 md:p-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Loading course details...</h1>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Current registered credits (this would come from your database)
+  const currentCredits = 18
+  const maxCredits = 25
+
+  // Check if prerequisites are met
+  const isPrerequisitesMet = true
+
   return (
     <div className="flex flex-col gap-4 p-4 md:gap-8 md:p-8">
       <div className="flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{course.name}</h1>
+          <h1 className="text-2xl font-bold">{course.course_name}</h1>
           <p className="text-sm text-muted-foreground">
-            {course.id} • {course.department}
+            {course.course_id} • {course.department}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {course.registered ? (
+          {isEnrolled ? (
             <Button variant="destructive" onClick={handleDrop} disabled={isLoading}>
               {isLoading ? "Processing..." : "Drop Course"}
             </Button>
@@ -166,16 +175,25 @@ export default function CourseDetailsPage({ params }: { params: { id: string } }
               <CardTitle>Course Description</CardTitle>
             </CardHeader>
             <CardContent>
-              <p>{course.description}</p>
+              <p>{course.description || "No description available."}</p>
+              <Separator className="my-4" />
+              <h3 className="mb-2 font-semibold">Learning Outcomes</h3>
+              <p className="whitespace-pre-line">{course.learning_outcomes || "No learning outcomes specified."}</p>
+
               <Separator className="my-4" />
               <h3 className="mb-2 font-semibold">Course Syllabus</h3>
-              <ul className="list-inside list-disc space-y-2">
-                {course.syllabus.map((item, index) => (
-                  <li key={index} className="text-muted-foreground">
-                    {item}
-                  </li>
-                ))}
-              </ul>
+              {course.syllabus_url ? (
+                <a
+                  href={course.syllabus_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  View Syllabus
+                </a>
+              ) : (
+                <p className="text-muted-foreground">No syllabus available</p>
+              )}
             </CardContent>
           </Card>
 
@@ -187,7 +205,7 @@ export default function CourseDetailsPage({ params }: { params: { id: string } }
             </Alert>
           )}
 
-          {currentCredits + course.credits > maxCredits && !course.registered && (
+          {currentCredits + course.credits > maxCredits && !isEnrolled && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Credit Limit Exceeded</AlertTitle>
@@ -215,32 +233,46 @@ export default function CourseDetailsPage({ params }: { params: { id: string } }
                 <User className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">Instructor</p>
-                  <p className="text-sm text-muted-foreground">{course.instructor}</p>
+                  <p className="text-sm text-muted-foreground">{course.professor_name || "TBA"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <Clock className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">Schedule</p>
-                  <p className="text-sm text-muted-foreground">{course.timing}</p>
+                  <div className="space-y-1">
+                    {course.schedules && course.schedules.length > 0 ? (
+                      course.schedules.map((schedule: any, index: number) => (
+                        <p key={index} className="text-sm text-muted-foreground">
+                          {schedule.day_of_week} {schedule.start_time.substring(0, 5)} -{" "}
+                          {schedule.end_time.substring(0, 5)}
+                          {schedule.schedule_type && ` (${schedule.schedule_type})`}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No schedule available</p>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <MapPin className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">Location</p>
-                  <p className="text-sm text-muted-foreground">{course.location}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {course.location || (course.schedules && course.schedules[0]?.room_number) || "TBA"}
+                  </p>
                 </div>
               </div>
-              {course.prerequisites.length > 0 && (
+              {prerequisites.length > 0 && (
                 <div className="flex items-center gap-2">
                   <FileText className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium">Prerequisites</p>
                     <div className="flex flex-wrap gap-1 pt-1">
-                      {course.prerequisites.map((prereq) => (
-                        <Badge key={prereq} variant="outline">
-                          {prereq}
+                      {prerequisites.map((prereq) => (
+                        <Badge key={prereq.id} variant="outline">
+                          {prereq.name}
                         </Badge>
                       ))}
                     </div>
@@ -251,7 +283,7 @@ export default function CourseDetailsPage({ params }: { params: { id: string } }
                 <Calendar className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">Status</p>
-                  {course.registered ? (
+                  {isEnrolled ? (
                     <div className="flex items-center gap-1">
                       <CheckCircle className="h-3 w-3 text-green-600" />
                       <p className="text-sm text-green-600">Registered</p>

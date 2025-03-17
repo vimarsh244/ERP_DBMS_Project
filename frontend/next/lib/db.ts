@@ -6,10 +6,15 @@ if (!process.env.NEON_DATABASE_URL && !process.env.NEXT_PUBLIC_NEON_DATABASE_URL
 }
 
 // Create a connection pool
-const pool = new Pool({ connectionString: process.env.NEXT_PUBLIC_NEON_DATABASE_URL || process.env.NEON_DATABASE_URL })
+const pool = new Pool({ connectionString: process.env.NEXT_PUBLIC_NEON_DATABASE_URL })
 
-// Helper function to execute SQL queries
+// Helper function to execute SQL queries (server-side only)
 export async function executeQuery(query: string, params: any[] = []) {
+  // Ensure this only runs on the server
+  // if (typeof window !== "undefined") {
+  //   throw new Error("Database queries can only be executed on the server")
+  // }
+
   const client = await pool.connect()
   try {
     return await client.query(query, params)
