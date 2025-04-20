@@ -4,10 +4,11 @@ import { useState, useEffect } from "react"
 import { useSession } from "next-auth/react"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { BookOpen, Calendar, CheckCircle, Users, Clock, AlertCircle } from "lucide-react"
+import { BookOpen, Calendar, CheckCircle, Users, Clock, AlertCircle, Pin } from "lucide-react"
 import { getUserById } from "@/lib/user-service"
 import { getEnrollmentsForStudent } from "@/lib/course-service"
 import { getAnnouncementsForStudent } from "@/lib/announcement-service"
+import { getAllGlobalAnnouncementsAction, getSystemSettingAction } from "@/lib/actions"
 import { useToast } from "@/hooks/use-toast"
 
 export default function DashboardPage() {
@@ -17,14 +18,18 @@ export default function DashboardPage() {
   const [userData, setUserData] = useState<any>(null)
   const [enrollments, setEnrollments] = useState<any[]>([])
   const [announcements, setAnnouncements] = useState<any[]>([])
+  const [globalAnnouncements, setGlobalAnnouncements] = useState<any[]>([])
   const [upcomingClasses, setUpcomingClasses] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [registrationOpen, setRegistrationOpen] = useState(true)
 
   useEffect(() => {
     if (session?.user?.id) {
       fetchUserData()
       fetchEnrollments()
       fetchAnnouncements()
+      fetchGlobalAnnouncements()
+      fetchSystemSettings()
     }
   }, [session])
 
@@ -100,6 +105,24 @@ export default function DashboardPage() {
     }
   }
 
+  const fetchGlobalAnnouncements = async () => {
+    try {
+      const data = await getAllGlobalAnnouncementsAction()
+      setGlobalAnnouncements(data)
+    } catch (error) {
+      console.error("Error fetching global announcements:", error)
+    }
+  }
+
+  const fetchSystemSettings = async () => {
+    try {
+      const registrationSetting = await getSystemSettingAction("registration_open")
+      setRegistrationOpen(registrationSetting ? registrationSetting.value === "true" : true)
+    } catch (error) {
+      console.error("Error fetching system settings:", error)
+    }
+  }
+
   // Calculate registered credits
   const registeredCredits = enrollments
     .filter((e) => e.status === "enrolled")
@@ -123,6 +146,46 @@ export default function DashboardPage() {
       <div className="flex items-center gap-4">
         <h1 className="text-3xl font-bold">Welcome, {userData?.name || session?.user?.name}</h1>
       </div>
+
+      {!registrationOpen && (
+        <Card className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-600" />
+              <p className="font-medium text-amber-800 dark:text-amber-400">
+                Course registration is currently closed system-wide. You cannot register for new courses at this time.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {globalAnnouncements.length > 0 && (
+        <Card className="border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-blue-800 dark:text-blue-300">System Announcements</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {globalAnnouncements.map((announcement) => (
+              <div key={announcement.id} className="flex items-start gap-2">
+                {announcement.is_pinned ? (
+                  <Pin className="mt-0.5 h-4 w-4 text-blue-600 dark:text-blue-400" />
+                ) : (
+                  <AlertCircle className="mt-0.5 h-4 w-4 text-blue-600 dark:text-blue-400" />
+                )}
+                <div>
+                  <p className="font-medium text-blue-800 dark:text-blue-300">{announcement.title}</p>
+                  <p className="text-sm text-blue-700 dark:text-blue-400">{announcement.content}</p>
+                  <p className="mt-1 text-xs text-blue-600 dark:text-blue-500">
+                    Posted by {announcement.creator_name} on {new Date(announcement.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}  
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -252,4 +315,3 @@ export default function DashboardPage() {
     </div>
   )
 }
-

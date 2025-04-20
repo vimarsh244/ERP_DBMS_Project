@@ -2,18 +2,19 @@ import { Pool } from "@neondatabase/serverless"
 
 // Check for environment variables
 if (!process.env.NEON_DATABASE_URL && !process.env.NEXT_PUBLIC_NEON_DATABASE_URL) {
-  throw new Error("NEON_DATABASE_URL environment variable is not set")
+  throw new Error("Database URL environment variable is not set")
 }
 
 // Create a connection pool
-const pool = new Pool({ connectionString: process.env.NEXT_PUBLIC_NEON_DATABASE_URL })
+const connectionString = process.env.NEON_DATABASE_URL || process.env.NEXT_PUBLIC_NEON_DATABASE_URL
+const pool = new Pool({ connectionString })
 
-// Helper function to execute SQL queries (server-side only)
+// Helper function to execute SQL queries
 export async function executeQuery(query: string, params: any[] = []) {
-  // Ensure this only runs on the server
-  // if (typeof window !== "undefined") {
-  //   throw new Error("Database queries can only be executed on the server")
-  // }
+  // For development purposes, allow client-side queries if using NEXT_PUBLIC_
+  if (typeof window !== "undefined" && !process.env.NEXT_PUBLIC_NEON_DATABASE_URL) {
+    throw new Error("Database queries can only be executed on the server")
+  }
 
   const client = await pool.connect()
   try {
@@ -145,6 +146,75 @@ export async function initializeDatabase() {
       )
     `)
 
+    // Create assignments table
+    await executeQuery(`
+      CREATE TABLE IF NOT EXISTS assignments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        course_offering_id UUID REFERENCES course_offerings(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        due_date TIMESTAMP WITH TIME ZONE NOT NULL,
+        max_points INTEGER DEFAULT 100,
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // Create assignment_submissions table
+    await executeQuery(`
+      CREATE TABLE IF NOT EXISTS assignment_submissions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        assignment_id UUID REFERENCES assignments(id) ON DELETE CASCADE,
+        student_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        submission_text TEXT,
+        file_path TEXT,
+        file_name TEXT,
+        file_type TEXT,
+        submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        grade NUMERIC(5,2),
+        feedback TEXT,
+        status VARCHAR(50) DEFAULT 'submitted',
+        UNIQUE(assignment_id, student_id)
+      )
+    `)
+
+    // Create system_settings table
+    await executeQuery(`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        id SERIAL PRIMARY KEY,
+        key VARCHAR(100) UNIQUE NOT NULL,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+      )
+    `)
+
+    // Create global_announcements table
+    await executeQuery(`
+      CREATE TABLE IF NOT EXISTS global_announcements (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title VARCHAR(255) NOT NULL,
+        content TEXT NOT NULL,
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        priority VARCHAR(20) DEFAULT 'normal',
+        is_pinned BOOLEAN DEFAULT FALSE,
+        visible_from TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        visible_until TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // Insert default system settings
+    await executeQuery(`
+      INSERT INTO system_settings (key, value)
+      VALUES ('registration_open', 'true')
+      ON CONFLICT (key) DO NOTHING
+    `)
+
     // Create seed data function
     await executeQuery(`
       CREATE OR REPLACE FUNCTION seed_initial_data() RETURNS VOID AS $$
@@ -155,6 +225,7 @@ export async function initializeDatabase() {
         cs_course_id VARCHAR(50);
         math_course_id VARCHAR(50);
         course_offering_id UUID;
+        assignment_id UUID;
       BEGIN
         -- Create admin user if not exists
         INSERT INTO users (name, email, password, role)
@@ -206,6 +277,24 @@ export async function initializeDatabase() {
         INSERT INTO enrollments (student_id, course_offering_id, status)
         VALUES (student_id, course_offering_id, 'enrolled')
         ON CONFLICT DO NOTHING;
+        
+        -- Create sample assignment if not exists
+        INSERT INTO assignments (course_offering_id, title, description, due_date, max_points, created_by)
+        VALUES (
+          course_offering_id, 
+          'Assignment 1: Python Basics', 
+          'Complete the exercises on basic Python syntax, variables, and control structures.', 
+          CURRENT_TIMESTAMP + INTERVAL '7 days', 
+          100, 
+          professor_id
+        )
+        ON CONFLICT DO NOTHING
+        RETURNING id INTO assignment_id;
+        
+        -- Create global announcement if not exists
+        INSERT INTO global_announcements (title, content, created_by, priority)
+        VALUES ('Welcome to ERP 2.0', 'Welcome to the new ERP system. Please explore the features and provide feedback.', admin_id, 'normal')
+        ON CONFLICT DO NOTHING;
       END;
       $$ LANGUAGE plpgsql;
     `)
@@ -220,4 +309,3 @@ export async function initializeDatabase() {
     return false
   }
 }
-

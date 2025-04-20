@@ -65,6 +65,13 @@ export default function DashboardLayout({
             >
               Announcements
             </Link>
+
+            <Link
+              className={`text-sm font-medium ${pathname.startsWith("/dashboard/assignments") ? "text-primary" : ""}`}
+              href="/dashboard/assignments"
+            >
+              Assignments
+            </Link>
           </nav>
           <ThemeToggle />
           <Link href="/dashboard/profile">
@@ -125,6 +132,17 @@ export default function DashboardLayout({
                   >
                     <Clock className="h-4 w-4" />
                     Course History
+                  </Link>
+                {/* </li>
+                <li> */}
+                  <Link
+                    className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${
+                      pathname.startsWith("/dashboard/assignments") ? "bg-accent" : "hover:bg-accent"
+                    }`}
+                    href="/dashboard/assignments"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    Assignments
                   </Link>
                 </li>
               )}

@@ -2,6 +2,28 @@
 
 import { executeQuery } from "@/lib/db"
 import { gradePoints } from "@/lib/course-service"
+import {
+  createAssignment,
+  updateAssignment,
+  deleteAssignment,
+  getAssignmentById,
+  getAssignmentsForCourseOffering,
+  getAssignmentsForStudent,
+  submitAssignment,
+  getSubmissionForStudent,
+  getSubmissionsForAssignment,
+  gradeSubmission,
+} from "@/lib/assignment-service"
+import {
+  getSystemSetting,
+  updateSystemSetting,
+  getAllSystemSettings,
+  createGlobalAnnouncement,
+  getAllGlobalAnnouncements,
+  getGlobalAnnouncementById,
+  updateGlobalAnnouncement,
+  deleteGlobalAnnouncement,
+} from "@/lib/system-service"
 
 // User actions
 export async function getUserByIdAction(id: string) {
@@ -733,3 +755,126 @@ export async function calculateGPAAction(studentId: string) {
   }
 }
 
+// Assignment actions
+export async function createAssignmentAction(data: {
+  course_offering_id: string
+  title: string
+  description: string | null
+  due_date: string
+  max_points: number
+  created_by: string
+  is_active?: boolean
+}) {
+  return createAssignment(data)
+}
+
+export async function updateAssignmentAction(
+  id: string,
+  data: {
+    title?: string
+    description?: string | null
+    due_date?: string
+    max_points?: number
+    is_active?: boolean
+  },
+) {
+  return updateAssignment(id, data)
+}
+
+export async function deleteAssignmentAction(id: string) {
+  return deleteAssignment(id)
+}
+
+export async function getAssignmentByIdAction(id: string) {
+  return getAssignmentById(id)
+}
+
+export async function getAssignmentsForCourseOfferingAction(courseOfferingId: string) {
+  return getAssignmentsForCourseOffering(courseOfferingId)
+}
+
+export async function getAssignmentsForStudentAction(studentId: string) {
+  return getAssignmentsForStudent(studentId)
+}
+
+export async function submitAssignmentAction(data: {
+  assignment_id: string
+  student_id: string
+  submission_text?: string | null
+  file_path?: string | null
+  file_name?: string | null
+  file_type?: string | null
+}) {
+  return submitAssignment(data)
+}
+
+export async function getSubmissionForStudentAction(assignmentId: string, studentId: string) {
+  return getSubmissionForStudent(assignmentId, studentId)
+}
+
+export async function getSubmissionsForAssignmentAction(assignmentId: string) {
+  return getSubmissionsForAssignment(assignmentId)
+}
+
+export async function gradeSubmissionAction(
+  assignmentId: string,
+  studentId: string,
+  data: {
+    grade: number
+    feedback?: string | null
+  },
+) {
+  return gradeSubmission(assignmentId, studentId, data)
+}
+
+// System settings actions
+export async function getSystemSettingAction(key: string) {
+  return getSystemSetting(key)
+}
+
+export async function updateSystemSettingAction(key: string, value: string, updatedBy: string | null = null) {
+  return updateSystemSetting(key, value, updatedBy)
+}
+
+export async function getAllSystemSettingsAction() {
+  return getAllSystemSettings()
+}
+
+// Global announcement actions
+export async function createGlobalAnnouncementAction(data: {
+  title: string
+  content: string
+  created_by: string
+  priority?: string
+  is_pinned?: boolean
+  visible_from?: string
+  visible_until?: string | null
+}) {
+  return createGlobalAnnouncement(data)
+}
+
+export async function getAllGlobalAnnouncementsAction() {
+  return getAllGlobalAnnouncements()
+}
+
+export async function getGlobalAnnouncementByIdAction(id: string) {
+  return getGlobalAnnouncementById(id)
+}
+
+export async function updateGlobalAnnouncementAction(
+  id: string,
+  data: {
+    title?: string
+    content?: string
+    priority?: string
+    is_pinned?: boolean
+    visible_from?: string
+    visible_until?: string | null
+  },
+) {
+  return updateGlobalAnnouncement(id, data)
+}
+
+export async function deleteGlobalAnnouncementAction(id: string) {
+  return deleteGlobalAnnouncement(id)
+}
